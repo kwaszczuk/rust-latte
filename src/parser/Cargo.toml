@@ -1,0 +1,11 @@
+[package]
+name = "parser"
+version = "0.1.0"
+authors = ["Karol Waszczuk <waszczukarol@gmail.com>"]
+edition = "2018"
+build = false
+
+[dependencies]
+base = { path = "../base" }
+lalrpop-util = "0.17.2"
+regex = "0.2.0"

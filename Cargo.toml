@@ -1,0 +1,21 @@
+[package]
+name = "latte"
+version = "0.1.0"
+authors = ["Karol Waszczuk <waszczukarol@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+base = { path = "src/base" }
+parser = { path = "src/parser" }
+llvm = { path = "src/llvm" }
+
+[workspace]
+members = ["src/base", "src/parser", "src/compilator", "src/parser/generate"]
+1
+[[bin]]
+name = "latc_llvm"
+path = "src/compilator/src/main.rs"
+
+[[bin]]
+name = "latc"
+path = "src/cli/main.rs"

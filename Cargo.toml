@@ -7,15 +7,15 @@ edition = "2018"
 [dependencies]
 base = { path = "src/base" }
 parser = { path = "src/parser" }
-llvm = { path = "src/llvm" }
+compiler = { path = "src/compiler" }
 
 [workspace]
-members = ["src/base", "src/parser", "src/compilator", "src/parser/generate"]
-1
+members = ["src/base", "src/parser", "src/compiler", "src/parser/generate"]
+
 [[bin]]
-name = "latc_llvm"
-path = "src/compilator/src/main.rs"
+name = "latc_x86"
+path = "src/compiler/src/main.rs"
 
 [[bin]]
 name = "latc"
-path = "src/cli/main.rs"
+path = "src/cli/src/main.rs"

@@ -1,6 +1,5 @@
 use std::str::FromStr;
 use base::ast;
-use base::operators;
 
 grammar;
 
@@ -16,14 +15,11 @@ Semicolon: () = {
     // <!> => errors.push(<>.error)
 };
 
-List<Rule>: Vec<Rule> =
-  <list: (<Rule>)+> => {
-    let mut rules = Vec::new();
-    for rule in list {
-      rules.push(rule);
-    }
-    rules
-  };
+Empty: () = {
+    "" => (),
+    // <!> => ()
+    // <!> => errors.push(<>.error)
+};
 
 List<Rule, Separator>: Vec<Rule> =
   <list: (<Rule> <Separator>)*> <last: Rule?> => {
@@ -38,123 +34,210 @@ List<Rule, Separator>: Vec<Rule> =
     rules
   };
 
-/* -------------------  TYPES  ------------------- */
+ListNoSep<Rule>: Vec<Rule> =
+  <list: (<Rule>)*> => {
+    let mut rules = Vec::new();
+    for rule in list {
+      rules.push(rule);
+    }
+    rules
+  };
+
+// -------------------  TYPES  -------------------
 pub Type: ast::Type = {
-    <loc: @L> "int"     => ast::Type::Int { <> },  // Int
-    <loc: @L> "string"  => ast::Type::Str { <> },  // Str
-    <loc: @L> "boolean" => ast::Type::Bool { <> }, // Boolean
-    <loc: @L> "void"    => ast::Type::Void { <> }, // Void
+    "int"     => ast::Type::Int,  // Int
+    "string"  => ast::Type::Str,  // Str
+    "boolean" => ast::Type::Bool, // Boolean
+    "void"    => ast::Type::Void, // Void
 };
 
-/* ------------------- PROGRAM ------------------- */
+// ------------------- PROGRAM -------------------
 
 pub Program: ast::Program = {
-  <topdefs: List<TopDef> => ast::Program { <> }, // Program
+  <defs: ListNoSep<TopDef>> => ast::Program { <> }, // Program
 };
 
-pub TopDef: ast::TopDef = {
-  <loc: @L> <type: Type> <ident: Ident> "(" <args: List<Arg, Comma>> ")" <block: Block> => ast::FnDef { <> }, // FnDef
+pub TopDef: ast::FnDef = {
+  <loc: @L> <ty: Type> <ident: PIdent> "(" <args: List<Arg, Comma>> ")" <block: Block> => ast::FnDef { <> }, // FnDef
 };
 
 pub Arg: ast::Arg = {
-  <loc: @L> <type: Type> <ident: Ident> => ast::Arg { <> }, // Arg
+  <loc: @L> <ty: Type> <ident: PIdent> => ast::Arg { <> }, // Arg
 };
 
-/* ------------------- STATEMENTS ------------------- */
+pub Block: ast::Block = {
+    <loc: @L> "{" <stmts: ListNoSep<Stmt>> "}" => ast::Block { <> }, // Block
+};
+
+// ------------------- STATEMENTS -------------------
+// Grammar got modified to avoid conflicts using method des\]cribed here:
+// https://en.wikipedia.org/wiki/Dangling_else#Avoiding_the_conflict_in_LR_parsers
 
 pub Stmt: ast::Stmt = {
-  <loc: @L> ";"                                                                   => (),                         // Empty
-  <loc: @L> <block: Block>                                                        => ast::Stmt::BStmt { <> },    // BStmt
-  <loc: @L> <type: Type> <items: List<Item, Comma>> ";"                           => ast::Stmt::Decl { <> },     // Decl
-  <loc: @L> <ident: Ident> "=" <expr: Expr> ";"                                   => ast::Stmt::Ass { <> },      // Ass
-  <loc: @L> <ident: Ident> "++" ";"                                               => ast::Stmt::Incr { <> },     // Incr
-  <loc: @L> <ident: Ident> "--" ";"                                               => ast::Stmt::Decr { <> },     // Decr
-  <loc: @L> "return" <expr: Expr> ";"                                             => ast::Stmt::Ret { <> },      // Ret
-  <loc: @L> "return" ";"                                                          => ast::Stmt::VRet { <> },     // VRet
-  <loc: @L> "if" "(" <expr: Expr> ")" <stmt: Stmt>                                => ast::Stmt::Cond { <> },     // Cond
-  <loc: @L> "if" "(" <expr: Expr> ")" <stmt_true: Stmt> "else" <stmt_false: Stmt> => ast::Stmt::CondElse { <> }, // CondElse
-  <loc: @L> "while" "(" <expr: Expr ")" <stmt: Stmt>                              => ast::Stmt::While { <> },    // While
-  <loc: @L> <expr: Expr> ";"                                                      => ast::Stmt::SExp { <> },     // SExp
+    OpenStmt,
+    ClosedStmt,
+};
+
+pub OpenStmt: ast::Stmt = {
+  <loc: @L> "if" "(" <expr: Expr> ")" <stmt: SimpleStmt> => ast::Stmt::Cond {
+      loc,
+      expr,
+      stmt: Box::new(stmt),
+  }, // Cond
+  <loc: @L> "if" "(" <expr: Expr> ")" <stmt: OpenStmt> => ast::Stmt::Cond {
+      loc,
+      expr,
+      stmt: Box::new(stmt),
+  }, // Cond
+  <loc: @L> "if" "(" <expr: Expr> ")" <stmt_true: ClosedStmt> "else" <stmt_false: OpenStmt> => ast::Stmt::CondElse {
+      loc,
+      expr,
+      stmt_true: Box::new(stmt_true),
+      stmt_false: Box::new(stmt_false),
+  }, // CondElse
+  <loc: @L> "while" "(" <expr: Expr> ")" <stmt: OpenStmt> => ast::Stmt::While {
+      loc,
+      expr,
+      stmt: Box::new(stmt),
+  }, // While
+};
+
+pub ClosedStmt: ast::Stmt = {
+  SimpleStmt,
+  <loc: @L> "if" "(" <expr: Expr> ")" <stmt_true: ClosedStmt> "else" <stmt_false: ClosedStmt> => ast::Stmt::CondElse {
+      loc,
+      expr,
+      stmt_true: Box::new(stmt_true),
+      stmt_false: Box::new(stmt_false),
+  }, // CondElse
+  <loc: @L> "while" "(" <expr: Expr> ")" <stmt: ClosedStmt> => ast::Stmt::While {
+      loc,
+      expr,
+      stmt: Box::new(stmt),
+  }, // While
+};
+
+pub SimpleStmt: ast::Stmt = {
+  <loc: @L> ";"                                       => ast::Stmt::Empty,           // Empty
+  <loc: @L> <block: Block>                            => ast::Stmt::BStmt { <> },    // BStmt
+  <loc: @L> <ty: Type> <items: List<Item, Comma>> ";" => ast::Stmt::Decl { <> },     // Decl
+  <loc: @L> <ident: PIdent> "=" <expr: Expr> ";"      => ast::Stmt::Ass { <> },      // Ass
+  <loc: @L> <ident: PIdent> "++" ";"                  => ast::Stmt::Incr { <> },     // Incr
+  <loc: @L> <ident: PIdent> "--" ";"                  => ast::Stmt::Decr { <> },     // Decr
+  <loc: @L> "return" <expr: Expr> ";"                 => ast::Stmt::Ret { <> },      // Ret
+  <loc: @L> "return" ";"                              => ast::Stmt::VRet { <> },     // VRet
+  <loc: @L> <expr: Expr> ";"                          => ast::Stmt::SExp { <> },     // SExp
 };
 
 pub Item: ast::Item = {
-    <loc: @L> <ident: Ident>                  => ast::Item::NoInit { <> }, // NoInit
-    <loc: @L> <ident: Ident> "=" <expr: Expr> => ast::Item::Init { <> },   // Init
+    <loc: @L> <ident: PIdent>                  => ast::Item::NoInit { <> }, // NoInit
+    <loc: @L> <ident: PIdent> "=" <expr: Expr> => ast::Item::Init { <> },   // Init
 };
 
-/* ------------------- EXPRESSIONS ------------------- */
+// ------------------- EXPRESSIONS -------------------
 
 pub Expr: ast::Expr = {
-    <loc: @L> <expr1 :Expr1> "||" <expr2: Expr> => ast::Expr::EOr { <> }, // EOr
+    <loc: @L> <expr1 :Expr1> "||" <expr2: Expr> => ast::Expr::EOr {
+        loc,
+        expr1: Box::new(expr1),
+        expr2: Box::new(expr2),
+    }, // EOr
     Expr1,
 };
 
 pub Expr1: ast::Expr = {
-    <loc: @L> <expr1: Expr2> "&&" <expr2: Expr1> => ast::Expr::EAnd { <> }, // EAnd
+    <loc: @L> <expr1: Expr2> "&&" <expr2: Expr1> => ast::Expr::EAnd {
+        loc,
+        expr1: Box::new(expr1),
+        expr2: Box::new(expr2),
+    }, // EAnd
     Expr2,
 };
 
 pub Expr2: ast::Expr = {
-    <loc: @L> <expr1: Expr2> <op: RelOp> <expr2: Expr3> => ast::Expr::ERel { <> }, // ERel
+    <loc: @L> <expr1: Expr2> <op: RelOp> <expr2: Expr3> => ast::Expr::ERel {
+        loc,
+        op,
+        expr1: Box::new(expr1),
+        expr2: Box::new(expr2),
+    }, // ERel
     Expr3,
 };
 
 pub Expr3: ast::Expr = {
-    <loc: @L> <expr1: Expr3> <op: AddOp> <expr2: Expr4> => ast::Expr::EAdd { <> }, // EAdd
+    <loc: @L> <expr1: Expr3> <op: AddOp> <expr2: Expr4> => ast::Expr::EAdd {
+        loc,
+        op,
+        expr1: Box::new(expr1),
+        expr2: Box::new(expr2),
+    }, // EAdd
     Expr4,
 };
 
 pub Expr4: ast::Expr = {
-    <loc: @L> <expr1: Expr4> <op: MulOp> <expr2: Expr5> => ast::Expr::EMul { <> }, // EMul
+    <loc: @L> <expr1: Expr4> <op: MulOp> <expr2: Expr5> => ast::Expr::EMul {
+        loc,
+        op,
+        expr1: Box::new(expr1),
+        expr2: Box::new(expr2),
+    }, // EMul
     Expr5,
 };
 
 pub Expr5: ast::Expr = {
-    <loc: @L> "-" <expr: Expr6> => ast::Expr::Neg { <> }, // Neg
-    <loc: @L> "!" <expr: Expr6> => ast::Expr::Not { <> }, // Not
+    <loc: @L> "-" <expr: Expr6> => ast::Expr::ENeg {
+        loc,
+        expr: Box::new(expr),
+    }, // Neg
+    <loc: @L> "!" <expr: Expr6> => ast::Expr::ENot {
+        loc,
+        expr: Box::new(expr),
+    }, // Not
     Expr6,
 };
 
 pub Expr6: ast::Expr = {
-    <loc: @L> <value: Ident>                                   => ast::Expr::EVar { <> },      // EVar
-    <loc: @L> <value: Integer>                                 => ast::Expr::ELitInt { <> },   // ELitInt
-    <loc: @L> "true"                                           => ast::Expr::ELitTrue { <> },  // ELitTrue
-    <loc: @L> "false"                                          => ast::Expr::ELitFalse { <> }, // ELitFalse
-    <loc: @L> <ident: Ident> "(" <args: List<Expr, Comma>> ")" => ast::Expr::EApp { <> },      // EApp
-    <loc: @L> <value: String>                                  => ast::Expr::EString { <> },   // EString
+    <loc: @L> <ident: PIdent>                                   => ast::Expr::EVar { <> },      // EVar
+    <loc: @L> <value: PInteger>                                 => ast::Expr::ELitInt { <> },   // ELitInt
+    <loc: @L> "true"                                            => ast::Expr::ELitTrue { <> },  // ELitTrue
+    <loc: @L> "false"                                           => ast::Expr::ELitFalse { <> }, // ELitFalse
+    <loc: @L> <ident: PIdent> "(" <args: List<Expr, Comma>> ")" => ast::Expr::EApp { <> },      // EApp
+    <loc: @L> <value: PString>                                  => ast::Expr::EString { <> },   // EString
+    <loc: @L> "(" <expr: Expr> ")" => expr,
 };
 
-/* ------------------- Operators ------------------- */
+// ------------------- Operators -------------------
 
-pub AddOp: operators::AddOp = {
-    "+" => ast::AddOp::Plus { <> },  // Plus
-    "-" => ast::AddOp::Minus { <> }, // Minus
+pub AddOp: ast::AddOp = {
+    "+" => ast::AddOp::Plus,  // Plus
+    "-" => ast::AddOp::Minus, // Minus
 };
 
-pub MulOp: operators::MulOp = {
-    "*" => ast::MulOp::Times { <> }, // Times
-    "/" => ast::MulOp::Div { <> },   // Div
+pub MulOp: ast::MulOp = {
+    "*" => ast::MulOp::Times, // Times
+    "/" => ast::MulOp::Div,   // Div
+    "%" => ast::MulOp::Mod,   // Mod
 };
 
-pub RelOp: operators::RelOp = {
-    "<"  => ast::RelOp::LTH { <> }, // LTH
-    "<=" => ast::RelOp::LE { <> },  // LE
-    ">"  => ast::RelOp::GTH { <> }, // GTH
-    ">=" => ast::RelOp::GE { <> },  // GE
-    "==" => ast::RelOp::EQU { <> }, // EQU
-    "!=" => ast::RelOp::NE { <> },  // NE
+pub RelOp: ast::RelOp = {
+    "<"  => ast::RelOp::LTH, // LTH
+    "<=" => ast::RelOp::LE,  // LE
+    ">"  => ast::RelOp::GTH, // GTH
+    ">=" => ast::RelOp::GE,  // GE
+    "==" => ast::RelOp::EQU, // EQU
+    "!=" => ast::RelOp::NE,  // NE
 };
 
-/* ------------------- BASIC PARSING TYPES ------------------- */
+// ------------------- BASIC PARSING TYPES -------------------
 
-pub Integer: ast::Integer = {
-  r"[0-9]+" => ast::Integer { value: i32::from_str(<>).unwrap() },
+pub PInteger: i32 = {
+  r"\d+" => i32::from_str(<>).unwrap(),
 };
 
-pub Ident: ast::Ident = {
-  r"[a-zA-Z][a-zA-Z_']*" => ast::Ident { value: String::from(<>) },
+pub PIdent: String = {
+  r"[a-zA-Z][[:word:]]*" => String::from(<>),
 };
 
-pub String: ast::String = {
-  r"\"[a-zA-Z]*\"" => ast::String { value: String::from(<>) },
+pub PString: String = {
+  r#""[[:print:]--"]*""# => String::from(<>),
 };

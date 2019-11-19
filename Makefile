@@ -1,7 +1,7 @@
 .PHONY: all
-all: llvm jvm insc
+all: x86 latc
 
-build_llvm build_jvm build_insc:
+build_x86 build_latc:
 	cargo build --release --bin $(BINARY_NAME) --message-format short --all --exclude generate_parser
 	cp target/release/$(BINARY_NAME) .
 
@@ -9,16 +9,13 @@ generate:
 	cargo build --release --message-format short --manifest-path src/parser/generate/Cargo.toml
 
 clean:
-	rm -rf target/ insc*
+	rm -rf target/ latc*
 
-.PHONY: llvm
-llvm: BINARY_NAME=insc_llvm
-llvm: build_llvm
+.PHONY: x86
+x86: BINARY_NAME=latc_x86
+x86: build_x86
 
-.PHONY: jvm
-jvm: BINARY_NAME=insc_jvm
-jvm: build_jvm
 
-.PHONY: insc
-insc: BINARY_NAME=insc
-insc: build_insc
+.PHONY: latc
+latc: BINARY_NAME=latc
+latc: build_latc

@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Error, Formatter};
 
-pub type Location = usize;
+use crate::types::Location;
 
 #[derive(Debug, PartialEq)]
 pub enum Type {
@@ -17,36 +17,38 @@ pub struct Program {
 
 #[derive(Debug, PartialEq)]
 pub struct FnDef {
-    pub loc: Location,
     pub ty: Type,
+    pub ty_loc: Location,
     pub ident: String,
+    pub ident_loc: Location,
     pub args: Vec<Arg>,
     pub block: Block,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Arg {
-    pub loc: Location,
     pub ty: Type,
+    pub ty_loc: Location,
     pub ident: String,
+    pub ident_loc: Location,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Block {
-    pub loc: Location,
     pub stmts: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Item {
     NoInit {
-        loc: Location,
         ident: String,
+        ident_loc: Location,
     },
     Init {
-        loc: Location,
         ident: String,
+        ident_loc: Location,
         expr: Expr,
+        expr_loc: Location,
     }
 }
 
@@ -55,52 +57,50 @@ pub enum Item {
 pub enum Stmt {
     Empty,
     BStmt {
-        loc: Location,
         block: Block,
     },
     Decl {
-        loc: Location,
         ty: Type,
+        ty_loc: Location,
         items: Vec<Item>,
     },
     Ass {
-        loc: Location,
         ident: String,
+        ident_loc: Location,
         expr: Expr,
+        all_loc: Location,
     },
     Incr {
-        loc: Location,
         ident: String,
+        ident_loc: Location,
+        all_loc: Location,
     },
     Decr {
-        loc: Location,
         ident: String,
+        ident_loc: Location,
+        all_loc: Location,
     },
     Ret {
-        loc: Location,
         expr: Expr,
+        all_loc: Location,
     },
     VRet {
-        loc: Location,
+        all_loc: Location,
     },
     Cond {
-        loc: Location,
         expr: Expr,
         stmt: Box<Stmt>,
     },
     CondElse {
-        loc: Location,
         expr: Expr,
         stmt_true: Box<Stmt>,
         stmt_false: Box<Stmt>,
     },
     While {
-        loc: Location,
         expr: Expr,
         stmt: Box<Stmt>,
     },
     SExp {
-        loc: Location,
         expr: Expr,
     },
 }
@@ -108,62 +108,50 @@ pub enum Stmt {
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     EOr {
-        loc: Location,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     EAnd {
-        loc: Location,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     ERel {
-        loc: Location,
         op: RelOp,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     EAdd {
-        loc: Location,
         op: AddOp,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     EMul {
-        loc: Location,
         op: MulOp,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     ENeg {
-        loc: Location,
         expr: Box<Expr>,
     },
     ENot {
-        loc: Location,
         expr: Box<Expr>,
     },
     EVar {
-        loc: Location,
         ident: String,
+        ident_loc: Location,
     },
     ELitInt {
-        loc: Location,
         value: i32,
     },
-    ELitTrue {
-        loc: Location,
-    },
-    ELitFalse {
-        loc: Location,
-    },
+    ELitTrue,
+    ELitFalse,
     EApp {
-        loc: Location,
         ident: String,
+        ident_loc: Location,
         args: Vec<Expr>,
+        args_loc: Location,
     },
     EString {
-        loc: Location,
         value: String,
     },
 }

@@ -2,10 +2,11 @@
 all: x86 latc
 
 build_x86 build_latc:
-	cargo build --release --bin $(BINARY_NAME) --message-format short --all --exclude generate_parser
+	cargo build --release --bin $(BINARY_NAME) --all --exclude generate_parser
+	# cargo build --release --bin $(BINARY_NAME) --message-format short --all --exclude generate_parser
 	cp target/release/$(BINARY_NAME) .
 
-generate:
+parser:
 	cargo build --release --message-format short --manifest-path src/parser/generate/Cargo.toml
 
 clean:

@@ -1,0 +1,15 @@
+[package]
+name = "analyzer"
+version = "0.1.0"
+authors = ["Karol Waszczuk <waszczukarol@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+base = { path = "../base" }
+parser = { path = "../parser" }
+codespan = "0.5.0"
+codespan-reporting = "0.5.0"
+
+[lib]
+name = "analyzer"
+path = "src/lib.rs"

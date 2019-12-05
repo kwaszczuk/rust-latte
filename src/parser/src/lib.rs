@@ -7,7 +7,7 @@ use base::ast;
 // returns an input string without following comments:
 // - single-line comments - // ...
 // - multi-line comments - /* ... */
-fn filter_comments(s: &str) -> String {
+pub fn filter_comments(s: &str) -> String {
     let len = s.len();
     let mut ret = String::new();
     let mut i = 0;
@@ -61,12 +61,15 @@ fn filter_comments(s: &str) -> String {
     ret
 }
 
-pub fn parse_file(filename: &str) -> Result<ast::Program, String> {
+pub fn get_content_wo_comments(filename: &str) -> String {
     let contents = fs::read_to_string(filename)
         .expect("Something went wrong reading the file");
-    let wo_comments = filter_comments(contents.as_ref());
-    println!("{}", wo_comments);
-    match grammar::ProgramParser::new().parse(wo_comments.as_ref()) {
+    filter_comments(contents.as_ref())
+}
+
+pub fn parse_file(filename: &str) -> Result<ast::Program, String> {
+    let contents = get_content_wo_comments(filename);
+    match grammar::ProgramParser::new().parse(contents.as_ref()) {
         Err(err) => Err(format!("{:?}", err)),
         Ok(tree) => Ok(tree)
     }

@@ -92,24 +92,28 @@ pub Stmt: ast::Stmt = {
 };
 
 pub OpenStmt: ast::Stmt = {
-  "if" "(" <expr: Expr> ")" <stmt: SimpleStmt> => ast::Stmt::Cond {
+  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: SimpleStmt> => ast::Stmt::Cond {
       expr,
+      expr_loc: Location { begin: loc_1, end: loc_2 },
       stmt: Box::new(stmt),
   }, // Cond
 
-  "if" "(" <expr: Expr> ")" <stmt: OpenStmt> => ast::Stmt::Cond {
+  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt> => ast::Stmt::Cond {
       expr,
+      expr_loc: Location { begin: loc_1, end: loc_2 },
       stmt: Box::new(stmt),
   }, // Cond
 
-  "if" "(" <expr: Expr> ")" <stmt_true: ClosedStmt> "else" <stmt_false: OpenStmt> => ast::Stmt::CondElse {
+  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: OpenStmt> => ast::Stmt::CondElse {
       expr,
+      expr_loc: Location { begin: loc_1, end: loc_2 },
       stmt_true: Box::new(stmt_true),
       stmt_false: Box::new(stmt_false),
   }, // CondElse
 
-  "while" "(" <expr: Expr> ")" <stmt: OpenStmt> => ast::Stmt::While {
+  "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt> => ast::Stmt::While {
       expr,
+      expr_loc: Location { begin: loc_1, end: loc_2 },
       stmt: Box::new(stmt),
   }, // While
 };
@@ -117,14 +121,16 @@ pub OpenStmt: ast::Stmt = {
 pub ClosedStmt: ast::Stmt = {
   SimpleStmt,
 
-  "if" "(" <expr: Expr> ")" <stmt_true: ClosedStmt> "else" <stmt_false: ClosedStmt> => ast::Stmt::CondElse {
+  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: ClosedStmt> => ast::Stmt::CondElse {
       expr,
+      expr_loc: Location { begin: loc_1, end: loc_2 },
       stmt_true: Box::new(stmt_true),
       stmt_false: Box::new(stmt_false),
   }, // CondElse
 
-  "while" "(" <expr: Expr> ")" <stmt: ClosedStmt> => ast::Stmt::While {
+  "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: ClosedStmt> => ast::Stmt::While {
       expr,
+      expr_loc: Location { begin: loc_1, end: loc_2 },
       stmt: Box::new(stmt),
   }, // While
 };
@@ -140,11 +146,11 @@ pub SimpleStmt: ast::Stmt = {
       items,
   },
 
-  <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <expr: Expr> <loc_3: @R> ";" => ast::Stmt::Ass { // Ass
+  <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> ";" => ast::Stmt::Ass { // Ass
       ident,
       ident_loc: Location { begin: loc_1, end: loc_2 },
       expr,
-      all_loc: Location { begin: loc_1, end: loc_3 },
+      expr_loc: Location { begin: loc_3, end: loc_4 },
   },
 
   <loc_1: @L> <ident: PIdent> <loc_2: @R> "++" <loc_3: @R> ";" => ast::Stmt::Incr { // Incr
@@ -159,12 +165,16 @@ pub SimpleStmt: ast::Stmt = {
       all_loc: Location { begin: loc_1, end: loc_3 },
   },
 
-  <loc_1: @L> "return" <expr: Expr> <loc_2: @R> ";" => ast::Stmt::Ret { // Ret
-      expr,
-      all_loc: Location { begin: loc_1, end: loc_2 },
+  <loc_1: @L> "return" <loc_2: @L> <expr: Expr> <loc_3: @R> ";" => ast::Stmt::Ret { // Ret
+      value: Some(ast::ExprValue {
+          expr,
+          expr_loc: Location { begin: loc_2, end: loc_3 },
+      }),
+      all_loc: Location { begin: loc_1, end: loc_3 },
   },
 
-  <loc_1: @L> "return" <loc_2: @R> ";" => ast::Stmt::VRet { // VRet
+  <loc_1: @L> "return" <loc_2: @R> ";" => ast::Stmt::Ret { // VRet
+      value: None,
       all_loc: Location { begin: loc_1, end: loc_2 },
   },
 
@@ -172,16 +182,19 @@ pub SimpleStmt: ast::Stmt = {
 };
 
 pub Item: ast::Item = {
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> => ast::Item::NoInit {
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> => ast::Item {
         ident,
         ident_loc: Location { begin: loc_1, end: loc_2 },
+        value: None,
     }, // NoInit
 
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> => ast::Item::Init {
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> => ast::Item {
         ident,
         ident_loc: Location { begin: loc_1, end: loc_2 },
-        expr,
-        expr_loc: Location { begin: loc_3, end: loc_4 },
+        value: Some(ast::ExprValue {
+            expr,
+            expr_loc: Location { begin: loc_3, end: loc_4 },
+        }),
     },   // Init
 };
 

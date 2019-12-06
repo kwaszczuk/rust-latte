@@ -1,4 +1,5 @@
 use std::vec::Vec;
+use crate::types::*;
 
 use base::types::{Location};
 
@@ -16,9 +17,14 @@ pub enum CompilerError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeError {
-    FunctionVoidArgument {
+    VoidVariable {
         loc: Location
     },
+    InvalidType {
+        exp_ty: VarType,
+        ty: VarType,
+        loc: Location,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,17 +35,39 @@ pub enum SemanticError {
         loc: Location,
         prev_loc: Location
     },
+    UndeclaredVariable {
+        ident: String,
+        loc: Location,
+    },
 }
+
+macro_rules! bold_it {
+    ( $v:expr ) => {
+        {
+            Style::new().bold().paint($v.to_string())
+        }
+    };
+}
+
+use ansi_term::Style;
 
 impl TypeError {
     fn to_diagnostic(&self, f_id: FileId) -> Diagnostic {
         use TypeError::*;
         match self {
-            FunctionVoidArgument { loc } =>
+            VoidVariable { loc } =>
                 Diagnostic::new_error(
-                    "invalid function parameter type `void`",
+                    "variable declared with type `void`",
                     Label::new(f_id, loc, ""),
                 ),
+            InvalidType { exp_ty, ty, loc } =>
+                Diagnostic::new_error(
+                    "invalid type",
+                    Label::new(f_id, loc, ""),
+                ).with_notes(vec![
+                    format!("expected type `{}`", bold_it![exp_ty]),
+                    format!("   found type `{}`", bold_it![ty]),
+                ]),
         }
     }
 }
@@ -62,6 +90,12 @@ impl SemanticError {
                     prev_loc,
                     "previously declared here",
                 )]),
+            UndeclaredVariable { ident, loc } =>
+                Diagnostic::new_error(
+                    format!("undeclared variable `{}`", ident),
+                    Label::new(f_id, loc, ""),
+                ),
+
         }
     }
 }

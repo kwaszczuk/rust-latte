@@ -39,17 +39,16 @@ pub struct Block {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Item {
-    NoInit {
-        ident: String,
-        ident_loc: Location,
-    },
-    Init {
-        ident: String,
-        ident_loc: Location,
-        expr: Expr,
-        expr_loc: Location,
-    }
+pub struct Item {
+   pub ident: String,
+   pub ident_loc: Location,
+   pub value: Option<ExprValue>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ExprValue {
+   pub expr: Expr,
+   pub expr_loc: Location,
 }
 
 
@@ -68,7 +67,7 @@ pub enum Stmt {
         ident: String,
         ident_loc: Location,
         expr: Expr,
-        all_loc: Location,
+        expr_loc: Location,
     },
     Incr {
         ident: String,
@@ -81,23 +80,23 @@ pub enum Stmt {
         all_loc: Location,
     },
     Ret {
-        expr: Expr,
-        all_loc: Location,
-    },
-    VRet {
+        value: Option<ExprValue>,
         all_loc: Location,
     },
     Cond {
         expr: Expr,
+        expr_loc: Location,
         stmt: Box<Stmt>,
     },
     CondElse {
         expr: Expr,
+        expr_loc: Location,
         stmt_true: Box<Stmt>,
         stmt_false: Box<Stmt>,
     },
     While {
         expr: Expr,
+        expr_loc: Location,
         stmt: Box<Stmt>,
     },
     SExp {

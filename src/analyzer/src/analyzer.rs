@@ -4,75 +4,11 @@ use std::vec::Vec;
 
 use base::ast;
 use base::symbol_table::{SymbolTable};
-use base::types::{Location};
 use crate::errors::CompilerError::*;
 use crate::errors::TypeError::*;
 use crate::errors::SemanticError::*;
 use crate::errors::{CompilerError, ErrorHandler, ErrorHandling};
-
-enum SimpleType {
-    Int,
-    Str,
-    Bool,
-    Void
-}
-
-enum Type {
-    Simple(SimpleType),
-    Fun {
-        ret: SimpleType,
-        args: Vec<SimpleType>
-    }
-}
-
-// impl From<ast::Type> for SimpleType {
-//     fn from(v: ast::Type) -> Self {
-//         match v {
-//             ast::Type::Int => SimpleType::Int,
-//             ast::Type::Str => SimpleType::Str,
-//             ast::Type::Bool => SimpleType::Bool,
-//             ast::Type::Void => SimpleType::Void,
-//         }
-//     }
-// }
-
-impl From<&ast::Type> for SimpleType {
-    fn from(v: &ast::Type) -> Self {
-        match v {
-            ast::Type::Int => SimpleType::Int,
-            ast::Type::Str => SimpleType::Str,
-            ast::Type::Bool => SimpleType::Bool,
-            ast::Type::Void => SimpleType::Void,
-        }
-    }
-}
-
-impl From<&ast::Type> for Type {
-    fn from(v: &ast::Type) -> Self {
-        match v {
-            ast::Type::Int => Type::Simple(SimpleType::Int),
-            ast::Type::Str => Type::Simple(SimpleType::Str),
-            ast::Type::Bool => Type::Simple(SimpleType::Bool),
-            ast::Type::Void => Type::Simple(SimpleType::Void),
-        }
-    }
-}
-
-pub struct SymbolTableEntity {
-    ty: Type,
-    ty_loc: Location,
-    ident_loc: Location,
-}
-
-impl SymbolTableEntity {
-    fn new(ty: Type, ty_loc: Location, ident_loc: Location) -> Self {
-        SymbolTableEntity {
-            ty,
-            ty_loc,
-            ident_loc,
-        }
-    }
-}
+use crate::types::*;
 
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable<SymbolTableEntity>,
@@ -91,6 +27,51 @@ impl ErrorHandling for SemanticAnalyzer {
     fn get_errors(&self) -> Vec<CompilerError> {
         self.error_handler.get_errors()
     }
+}
+
+macro_rules! throw_if_undeclared {
+    ( $self:expr, $ident:expr, $ident_loc:expr ) => {
+        {
+            match $self.symbol_table.get(&$ident) {
+                None => {
+                    $self.throw(SemanticError(UndeclaredVariable {
+                        ident: $ident.clone(),
+                        loc: $ident_loc.clone(),
+                    }));
+                    true
+                },
+                _ => false,
+            }
+        }
+    };
+}
+
+macro_rules! throw_if_unmatched_type {
+    ( $self:expr, $exp_ty:expr, $ty:expr, $loc:expr ) => {
+        {
+            let mut thrown = false;
+            if $exp_ty != $ty {
+                $self.throw(TypeError(InvalidType {
+                    exp_ty: $exp_ty.clone(),
+                    ty: $ty.clone(),
+                    loc: $loc.clone(),
+                }));
+                thrown = true;
+            }
+            thrown
+        }
+    };
+}
+
+macro_rules! analyse_expr_and_match_type {
+    ( $self:expr, $expr:expr, $exp_ty:expr, $loc:expr ) => {
+        {
+            match $self.analyse_expression($expr) {
+                Ok(ty) => throw_if_unmatched_type![$self, $exp_ty, ty, $loc],
+                Err(_) => false
+            }
+        }
+    };
 }
 
 impl SemanticAnalyzer {
@@ -115,14 +96,14 @@ impl SemanticAnalyzer {
     }
 
     fn analyse_program(&mut self, program: &ast::Program) {
-        self.symbol_table.start_scope();
+        self.symbol_table.begin_scope();
 
         for fn_def in &program.defs {
             self.analyse_function_definition(fn_def);
 
-            // enable recursion with any function
+            // add all functions to the scope (enable recursion with any function)
             self.symbol_table.insert(fn_def.ident.clone(), SymbolTableEntity::new(
-                Type::Fun {
+                VarType::Fun {
                     ret: SimpleType::from(&fn_def.ty),
                     args: fn_def.args.iter().map(|a| SimpleType::from(&a.ty)).collect()
                 },
@@ -140,13 +121,13 @@ impl SemanticAnalyzer {
         }
 
         for fn_def in &program.defs {
-            self.symbol_table.start_scope();
-            // initialize function parameters
+            self.symbol_table.begin_scope();
+            // initialize function parameters, before analyzing the function body
             for arg in &fn_def.args {
                 self.symbol_table.insert(
                     arg.ident.clone(),
                     SymbolTableEntity::new(
-                        Type::from(&arg.ty),
+                        VarType::from(&arg.ty),
                         arg.ty_loc.clone(),
                         arg.ident_loc.clone()
                     )
@@ -162,26 +143,151 @@ impl SemanticAnalyzer {
     fn analyse_function_definition(&mut self, fn_def: &ast::FnDef) {
         let mut params = HashMap::new();
         for arg in &fn_def.args {
-           if arg.ty == ast::Type::Void {
-               self.throw(TypeError(FunctionVoidArgument {
-                   loc: arg.ty_loc.clone()
-               }));
-           }
-           match params.get(&arg.ident) {
-               None => {
-                   params.insert(arg.ident.clone(), arg.ident_loc.clone());
-               }
-               Some(prev_loc) => {
-                   self.throw(SemanticError(VariableRedefiniton {
-                       ident: arg.ident.clone(),
-                       loc: arg.ident_loc.clone(),
-                       prev_loc: prev_loc.clone()
-                   }));
-               }
-           }
+            // void variables are not supported
+            if arg.ty == ast::Type::Void {
+                self.throw(TypeError(VoidVariable {
+                    loc: arg.ident_loc.clone()
+                }));
+            }
+
+            // if variable wasn't redefined previously, add it to the scope
+            match params.get(&arg.ident) {
+                None => {
+                    params.insert(arg.ident.clone(), arg.ident_loc.clone());
+                }
+                Some(prev_loc) => {
+                    self.throw(SemanticError(VariableRedefiniton {
+                        ident: arg.ident.clone(),
+                        loc: arg.ident_loc.clone(),
+                        prev_loc: prev_loc.clone()
+                    }));
+                }
+            }
         }
     }
 
     fn analyse_block(&mut self, block: &ast::Block) {
+        for stmt in &block.stmts {
+            self.analyse_statement(stmt);
+        }
+    }
+
+    fn analyse_statement(&mut self, stmt: &ast::Stmt) {
+        use base::ast::Stmt::*;
+        match stmt {
+            Empty => {},
+            BStmt { block } => {
+                self.symbol_table.begin_scope();
+                self.analyse_block(block);
+                self.symbol_table.end_scope();
+            },
+            Decl { ty, ty_loc, items } => {
+                let is_void_type = ty == &ast::Type::Void;
+
+                for item in items {
+                    // void variables are not supported
+                    if is_void_type {
+                        self.throw(TypeError(VoidVariable {
+                            loc: item.ident_loc.clone()
+                        }));
+                        continue;
+                    }
+
+                    // check if variable got defined previously in current scope
+                    match self.symbol_table.get_from_current_scope(&item.ident) {
+                        Some(ent) => {
+                           self.throw(SemanticError(VariableRedefiniton {
+                               ident: item.ident.clone(),
+                               loc: item.ident_loc.clone(),
+                               prev_loc: ent.ident_loc.clone()
+                           }));
+                           continue;
+                        },
+                        None => {}
+                    }
+
+                    // add variable to the scope
+                    let item_ty = VarType::from(ty);
+                    self.symbol_table.insert(
+                        item.ident.clone(),
+                        SymbolTableEntity::new(
+                            item_ty.clone(),
+                            ty_loc.clone(),
+                            item.ident_loc.clone()
+                        )
+                    );
+
+                    // if variable has assigned value, check it's value type
+                    match &item.value {
+                        Some(item_value) => {
+                            analyse_expr_and_match_type![self, &item_value.expr, item_ty, item_value.expr_loc];
+                        }
+                        None => {}
+                    }
+                }
+            },
+            Ass { ident, ident_loc, expr, expr_loc } => {
+                if throw_if_undeclared!(self, ident, ident_loc) { return; }
+                let var = self.symbol_table.get(&ident).unwrap();
+
+                analyse_expr_and_match_type![self, expr, var.ty, expr_loc];
+            },
+            Incr { ident, ident_loc, all_loc } |
+            Decr { ident, ident_loc, all_loc } => {
+                if throw_if_undeclared!(self, ident, ident_loc) { return; }
+
+                let var = self.symbol_table.get(&ident).unwrap();
+                let exp_ty = VarType::Simple(SimpleType::Int);
+
+                throw_if_unmatched_type!(self, exp_ty, var.ty, ident_loc);
+            },
+            Ret { value, all_loc } => {
+            }
+            Cond { expr, expr_loc, stmt } => {
+                let cond_exp_ty = VarType::Simple(SimpleType::Bool);
+                analyse_expr_and_match_type![self, expr, cond_exp_ty, expr_loc];
+
+                self.symbol_table.begin_scope();
+                self.analyse_statement(stmt);
+                self.symbol_table.end_scope();
+            },
+            CondElse { expr, expr_loc, stmt_true, stmt_false } => {
+                let cond_exp_ty = VarType::Simple(SimpleType::Bool);
+                analyse_expr_and_match_type![self, expr, cond_exp_ty, expr_loc];
+
+                self.symbol_table.begin_scope();
+                self.analyse_statement(stmt_true);
+                self.symbol_table.end_scope();
+
+                self.symbol_table.begin_scope();
+                self.analyse_statement(stmt_false);
+                self.symbol_table.end_scope();
+            },
+            While { expr, expr_loc, stmt } => {
+                let while_exp_ty = VarType::Simple(SimpleType::Bool);
+                analyse_expr_and_match_type![self, expr, while_exp_ty, expr_loc];
+
+                self.symbol_table.begin_scope();
+                self.analyse_statement(stmt);
+                self.symbol_table.end_scope();
+            },
+            SExp { expr } => {
+                self.analyse_expression(expr);
+            }
+            _ => {}
+        }
+    }
+
+    fn analyse_expression(&mut self, expr: &ast::Expr) -> Result<VarType, ()> {
+        use ast::Expr::*;
+        use VarType::*;
+        use SimpleType::*;
+        match expr {
+            ELitInt { value } => Ok(Simple(Int)),
+            ELitTrue => Ok(Simple(Bool)),
+            ELitFalse => Ok(Simple(Bool)),
+            EString { value } => Ok(Simple(Str)),
+            _ => Err(())
+        }
     }
 }

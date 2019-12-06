@@ -6,28 +6,36 @@ pub struct SymbolTable<T> {
     scopes: Vec<HashMap<String, T>>
 }
 
-impl<T> SymbolTable<T> {
+impl<T> SymbolTable<T>
+    where T: Clone {
     pub fn new() -> Self {
         SymbolTable {
             scopes: vec![HashMap::new()]
         }
     }
 
-    pub fn get(&mut self, name: &String) -> Option<&T> {
+    pub fn get(&mut self, name: &String) -> Option<T> {
         for st in self.scopes.iter().rev() {
             match st.get(name) {
                 None => {}
-                ret => { return ret; },
+                Some(v) => { return Some(v.clone()); },
             }
         }
         None
     }
 
-    pub fn get_from_current_scope(&mut self, name: &String) -> Option<&T> {
-        self.get_current_scope().get(name)
+    pub fn get_from_current_scope(&mut self, name: &String) -> Option<T> {
+        match self.get_current_scope().get(name) {
+            Some(v) => Some(v.clone()),
+            None => None,
+        }
     }
 
-    pub fn contains(&self, name: &String) -> bool {
+    pub fn get_current_scope(&mut self) -> &mut HashMap<String, T> {
+        self.scopes.last_mut().unwrap()
+    }
+
+    pub fn contains(&mut self, name: &String) -> bool {
         for st in self.scopes.iter().rev() {
             match st.contains_key(name) {
                 false => {}
@@ -41,15 +49,11 @@ impl<T> SymbolTable<T> {
         self.get_current_scope().contains_key(name)
     }
 
-    fn get_current_scope(&mut self) -> &mut HashMap<String, T> {
-        self.scopes.last_mut().unwrap()
-    }
-
     pub fn insert(&mut self, name: String, ent: T) {
         self.get_current_scope().insert(name, ent);
     }
 
-    pub fn start_scope(&mut self) {
+    pub fn begin_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }
 

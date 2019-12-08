@@ -6,7 +6,7 @@ pub struct Location {
     pub end: usize
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Located<T> {
     pub all_loc: Location,
     pub value: T,

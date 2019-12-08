@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::types::{Location, Located};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Int,
     Str,
@@ -33,27 +33,22 @@ pub struct Arg {
     pub ident_loc: Location,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
+    pub end_loc: Location,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Item {
    pub ident: String,
    pub ident_loc: Location,
-   pub value: Option<ExprValue>,
+   pub value: Option<Expr>,
 }
-
-#[derive(Debug, PartialEq)]
-pub struct ExprValue {
-   pub expr: Expr,
-   pub expr_loc: Location,
-}
-
 
 pub type Stmt = Located<StmtTypes>;
-#[derive(Debug, PartialEq)]
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum StmtTypes {
     Empty,
     BStmt {
@@ -68,7 +63,6 @@ pub enum StmtTypes {
         ident: String,
         ident_loc: Location,
         expr: Expr,
-        expr_loc: Location,
     },
     Incr {
         ident: String,
@@ -79,23 +73,21 @@ pub enum StmtTypes {
         ident_loc: Location,
     },
     Ret {
-        value: Option<ExprValue>,
+        ret_loc: Location,
+        value: Option<Expr>,
     },
     Cond {
         expr: Expr,
-        expr_loc: Location,
-        stmt: Box<Stmt>,
+        block: Block,
     },
     CondElse {
         expr: Expr,
-        expr_loc: Location,
-        stmt_true: Box<Stmt>,
-        stmt_false: Box<Stmt>,
+        block_true: Block,
+        block_false: Block,
     },
     While {
         expr: Expr,
-        expr_loc: Location,
-        stmt: Box<Stmt>,
+        block: Block,
     },
     SExp {
         expr: Expr,
@@ -103,7 +95,8 @@ pub enum StmtTypes {
 }
 
 pub type Expr = Located<ExprTypes>;
-#[derive(Debug, PartialEq)]
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum ExprTypes {
     EOr {
         expr1: Box<Expr>,
@@ -133,11 +126,9 @@ pub enum ExprTypes {
     },
     ENeg {
         expr: Box<Expr>,
-        expr_loc: Location,
     },
     ENot {
         expr: Box<Expr>,
-        expr_loc: Location,
     },
     EVar {
         ident: String,

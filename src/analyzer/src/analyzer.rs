@@ -2,6 +2,7 @@ use std::convert::From;
 use std::collections::{HashMap};
 use std::vec::Vec;
 
+use base::types::Location;
 use base::ast;
 use base::symbol_table::{SymbolTable};
 use crate::errors::CompilerError::*;
@@ -12,7 +13,8 @@ use crate::types::*;
 
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable<SymbolTableEntity>,
-    error_handler: ErrorHandler
+    error_handler: ErrorHandler,
+    current_function: Option<(String, FunType)>,
 }
 
 impl ErrorHandling for SemanticAnalyzer {
@@ -77,7 +79,8 @@ impl SemanticAnalyzer {
     fn new() -> Self {
         SemanticAnalyzer {
             symbol_table: SymbolTable::new(),
-            error_handler: ErrorHandler::new()
+            error_handler: ErrorHandler::new(),
+            current_function: None,
         }
     }
 
@@ -90,7 +93,29 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn init_globals(&mut self) {
+        use VarType::*;
+        use SimpleType::*;
+
+        let global_fns = vec![
+            ("printString", FunType { ret: Void, args: vec![Str], }),
+            ("printInt",    FunType { ret: Void, args: vec![Int], }),
+            ("error",       FunType { ret: Void, args: vec![], }),
+            ("readInt",     FunType { ret: Int,  args: vec![], }),
+            ("readString",  FunType { ret: Str,  args: vec![], }),
+        ];
+
+        for (fn_name, fn_ty) in &global_fns {
+            self.symbol_table.insert(fn_name.to_string(), SymbolTableEntity {
+                ty: Fun(fn_ty.clone()),
+                ty_loc: Location::new(0, 0),
+                ident_loc: Location::new(0, 0),
+            });
+        }
+    }
+
     fn analyse(&mut self, ast_tree: &ast::Program) {
+        self.init_globals();
         self.analyse_program(ast_tree)
     }
 
@@ -112,24 +137,46 @@ impl SemanticAnalyzer {
 
             self.analyse_function_definition(fn_def);
 
+            let fn_ty = FunType {
+                ret: SimpleType::from(&fn_def.ty),
+                args: fn_def.args.iter().map(|a| SimpleType::from(&a.ty)).collect()
+            };
+
             // add all functions to the scope (enable recursion with any function)
             self.symbol_table.insert(fn_def.ident.clone(), SymbolTableEntity::new(
-                VarType::Fun(FunType {
-                    ret: SimpleType::from(&fn_def.ty),
-                    args: fn_def.args.iter().map(|a| SimpleType::from(&a.ty)).collect()
-                }),
+                VarType::Fun(fn_ty.clone()),
                 fn_def.ty_loc.clone(),
                 fn_def.ident_loc.clone()
             ));
-            good_fns.push(fn_def.clone());
+            good_fns.push((fn_def.clone(), fn_ty));
         }
 
         // check if `main` function exist
-        if let None = self.symbol_table.get(&"main".to_string()) {
-            self.throw(SemanticError(MissingEntrypoint));
+        match self.symbol_table.get(&"main".to_string()) {
+            None => {
+                self.throw(SemanticError(MissingEntrypoint));
+            },
+            Some(ent) => {
+                if let VarType::Fun(fn_ty) = ent.ty {
+                    if fn_ty.ret != SimpleType::Int {
+                        self.throw(TypeError(MainReturnType {
+                            exp_ty: VarType::Simple(SimpleType::Int),
+                            ty: VarType::Simple(fn_ty.ret.clone()),
+                            loc: ent.ty_loc.clone(),
+                        }));
+                    }
+                    if fn_ty.args.len() != 0 {
+                        self.throw(TypeError(MainArgumentsCount {
+                            exp_cnt: 0,
+                            cnt: fn_ty.args.len(),
+                            loc: ent.ident_loc.clone(),
+                        }));
+                    }
+                }
+            },
         }
 
-        for fn_def in &good_fns {
+        for (fn_def, fn_ty) in &good_fns {
             self.symbol_table.begin_scope();
             // initialize function parameters, before analyzing the function body
             for arg in &fn_def.args {
@@ -142,7 +189,12 @@ impl SemanticAnalyzer {
                     )
                 );
             }
+            self.current_function = Some((fn_def.ident.clone(), fn_ty.clone()));
             self.analyse_block(&fn_def.block);
+            if fn_ty.ret != SimpleType::Void {
+                self.analyse_function_returns(&fn_def.block, true);
+            }
+            self.current_function = None;
             self.symbol_table.end_scope();
         }
 
@@ -178,6 +230,65 @@ impl SemanticAnalyzer {
     fn analyse_block(&mut self, block: &ast::Block) {
         for stmt in &block.stmts {
             self.analyse_statement(stmt);
+        }
+    }
+
+    fn analyse_function_returns(&mut self, block: &ast::Block, should_throw: bool) -> bool {
+        use base::ast::StmtTypes::*;
+        let (fn_name, _) = self.current_function.clone().unwrap();
+
+        for stmt in &block.stmts {
+            match &stmt.value {
+                Ret { ret_loc, value } => {
+                    return true
+                },
+                Cond { expr, block } => {
+                    if let Some(true) = self.expr_is_true(&expr) {
+                        return self.analyse_function_returns(&block, true)
+                    }
+                },
+                CondElse { expr, block_true, block_false } => {
+                    if let Some(c) = self.expr_is_true(&expr) {
+                        if c == true {
+                            return self.analyse_function_returns(&block_true, true)
+                        } else {
+                            return self.analyse_function_returns(&block_false, true)
+                        }
+                    } else {
+                        let ret1 = self.analyse_function_returns(&block_true, false);
+                        let ret2 = self.analyse_function_returns(&block_false, false);
+                        if ret1 && ret2 {
+                            return true
+                        }
+                    }
+                },
+                While { expr, block } => {
+                    // TODO: check if in the infinite loop there's at least one return
+                    if let Some(true) = self.expr_is_true(&expr) {
+                        return true
+                    }
+                },
+                _ => {},
+            }
+        }
+
+        if should_throw {
+            self.throw(SemanticError(MissingReturn {
+                ident: fn_name.clone(),
+                loc: block.end_loc.clone(),
+            }));
+        }
+        return false
+    }
+
+    fn expr_is_true(&mut self, expr: &ast::Expr) -> Option<bool> {
+        use base::ast::ExprTypes::*;
+
+        match &expr.value {
+            ELitTrue => Some(true),
+            ELitFalse => Some(false),
+            ENot { expr } => None,
+            _ => None,
         }
     }
 
@@ -228,19 +339,19 @@ impl SemanticAnalyzer {
 
                     // if variable has assigned value, check it's value type
                     match &item.value {
-                        Some(item_value) => {
-                            analyse_expr_and_match_type![self, &item_value.expr, item_ty, item_value.expr_loc];
+                        Some(expr) => {
+                            analyse_expr_and_match_type![self, &expr, item_ty, expr.all_loc];
                         }
                         None => {}
                     }
                 }
             },
 
-            Ass { ident, ident_loc, expr, expr_loc } => {
+            Ass { ident, ident_loc, expr } => {
                 if throw_if_undeclared!(self, ident, ident_loc) { return; }
                 let var = self.symbol_table.get(&ident).unwrap();
 
-                analyse_expr_and_match_type![self, &expr, var.ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, var.ty, expr.all_loc];
             },
 
             Incr { ident, ident_loc } |
@@ -253,36 +364,67 @@ impl SemanticAnalyzer {
                 throw_if_unmatched_type!(self, exp_ty, var.ty, ident_loc);
             },
 
-            Ret { value: _ } => {}
+            Ret { ret_loc, value } => {
+                let mut ret_ty;
+                match &value {
+                    Some(expr) => {
+                        if let Ok(ty) = self.analyse_expression(&expr) {
+                            ret_ty = ty;
+                            if ret_ty == VarType::Simple(SimpleType::Void) {
+                                self.throw(TypeError(ReturnVoidType {
+                                    loc: expr.all_loc.clone()
+                                }));
+                                return
+                            }
+                        } else {
+                            return
+                        }
+                    },
+                    None => {
+                        ret_ty = VarType::Simple(SimpleType::Void);
+                    },
+                }
 
-            Cond { expr, expr_loc, stmt } => {
+                let (fn_name, fn_ty) = self.current_function.clone().unwrap();
+                if VarType::Simple(fn_ty.ret.clone()) != ret_ty {
+                    self.throw(TypeError(InvalidReturnType {
+                        ident: fn_name.clone(),
+                        exp_ty: VarType::Simple(fn_ty.ret.clone()),
+                        ty: ret_ty.clone(),
+                        loc: ret_loc.clone(),
+                    }));
+                }
+
+            },
+
+            Cond { expr, block } => {
                 let cond_exp_ty = VarType::Simple(SimpleType::Bool);
-                analyse_expr_and_match_type![self, &expr, cond_exp_ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, cond_exp_ty, expr.all_loc];
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(&stmt);
+                self.analyse_block(&block);
                 self.symbol_table.end_scope();
             },
 
-            CondElse { expr, expr_loc, stmt_true, stmt_false } => {
+            CondElse { expr, block_true, block_false } => {
                 let cond_exp_ty = VarType::Simple(SimpleType::Bool);
-                analyse_expr_and_match_type![self, &expr, cond_exp_ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, cond_exp_ty, expr.all_loc];
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(&stmt_true);
+                self.analyse_block(&block_true);
                 self.symbol_table.end_scope();
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(&stmt_false);
+                self.analyse_block(&block_false);
                 self.symbol_table.end_scope();
             },
 
-            While { expr, expr_loc, stmt } => {
+            While { expr, block } => {
                 let while_exp_ty = VarType::Simple(SimpleType::Bool);
-                analyse_expr_and_match_type![self, &expr, while_exp_ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, while_exp_ty, expr.all_loc];
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(&stmt);
+                self.analyse_block(&block);
                 self.symbol_table.end_scope();
             },
 
@@ -319,7 +461,6 @@ impl SemanticAnalyzer {
                     if expr1_ty.supports_operator(op) {
                         if let Ok(expr2_ty) = expr2_res {
                             throw_if_unmatched_type![self, expr1_ty, expr2_ty, expr2.all_loc];
-                            return Ok(expr1_ty)
                         }
                     } else {
                         self.throw(TypeError(OperatorUnsupported {
@@ -329,7 +470,7 @@ impl SemanticAnalyzer {
                         }));
                     }
                 }
-                Err(())
+                Ok(Simple(Bool))
             },
 
             EAdd { op, op_loc, expr1, expr2 } => {
@@ -372,20 +513,20 @@ impl SemanticAnalyzer {
                 Err(())
             },
 
-            ENeg { expr, expr_loc } => {
+            ENeg { expr } => {
                 let exp_ty = Simple(Int);
                 if let Ok(ty) = self.analyse_expression(&expr) {
-                    if throw_if_unmatched_type![self, exp_ty, ty, expr_loc] {
+                    if throw_if_unmatched_type![self, exp_ty, ty, expr.all_loc] {
                         return Ok(exp_ty)
                     }
                 }
                 Err(())
             },
 
-            ENot { expr, expr_loc } => {
+            ENot { expr } => {
                 let exp_ty = Simple(Bool);
                 if let Ok(ty) = self.analyse_expression(&expr) {
-                    if throw_if_unmatched_type![self, exp_ty, ty, expr_loc] {
+                    if throw_if_unmatched_type![self, exp_ty, ty, expr.all_loc] {
                         return Ok(exp_ty)
                     }
                 }

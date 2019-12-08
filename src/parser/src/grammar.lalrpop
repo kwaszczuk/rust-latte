@@ -92,7 +92,10 @@ pub Arg: ast::Arg = {
 };
 
 pub Block: ast::Block = {
-    "{" <stmts: ListNoSep<Stmt>> "}" => ast::Block { <> }, // Block
+    "{" <stmts: ListNoSep<Stmt>> <loc_end: @R> "}" => ast::Block {
+        stmts,
+        end_loc: Location::new(loc_end, loc_end),
+    }, // Block
 };
 
 // ------------------- STATEMENTS -------------------
@@ -106,48 +109,107 @@ pub Stmt: ast::Stmt = {
 
 pub OpenStmt: ast::Stmt = {
   <_beg: @L>
-      "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: SimpleStmt>
-  <_end: @R> => ast::Stmt {
-      all_loc: Location::new(_beg, _end),
-      value: ast::StmtTypes::Cond {
-          expr,
-          expr_loc: Location::new(loc_1, loc_2),
-          stmt: Box::new(stmt),
-      },
-  }, // Cond
+      "if" "(" <expr: Expr> ")" <stmt: SimpleStmt>
+  <_end: @R> => {
+      let blk;
+      match stmt.value {
+          ast::StmtTypes::BStmt { block } => { blk = block.clone() },
+          _ => {
+              blk = ast::Block {
+                  stmts: vec![stmt.clone()],
+                  end_loc: Location::new(stmt.all_loc.end, stmt.all_loc.end),
+              };
+          }
+      }
 
-  <_beg: @L>
-      "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt>
-  <_end: @R> => ast::Stmt {
-      all_loc: Location::new(_beg, _end),
-      value: ast::StmtTypes::Cond {
-          expr,
-          expr_loc: Location::new(loc_1, loc_2),
-          stmt: Box::new(stmt),
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::Cond {
+              expr,
+              block: blk,
+          },
       }
   }, // Cond
 
   <_beg: @L>
-    "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: OpenStmt>
-  <_end: @R> => ast::Stmt {
-      all_loc: Location::new(_beg, _end),
-      value: ast::StmtTypes::CondElse {
-          expr,
-          expr_loc: Location::new(loc_1, loc_2),
-          stmt_true: Box::new(stmt_true),
-          stmt_false: Box::new(stmt_false),
-      },
+      "if" "(" <expr: Expr> ")" <stmt: OpenStmt>
+  <_end: @R> => {
+      let blk;
+      match stmt.value {
+          ast::StmtTypes::BStmt { block } => { blk = block.clone() },
+          _ => {
+              blk = ast::Block {
+                  stmts: vec![stmt.clone()],
+                  end_loc: Location::new(stmt.all_loc.end, stmt.all_loc.end),
+              };
+          }
+      }
+
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::Cond {
+              expr,
+              block: blk,
+          },
+      }
+  }, // Cond
+
+  <_beg: @L>
+    "if" "(" <expr: Expr> ")" <stmt_true: ClosedStmt> "else" <stmt_false: OpenStmt>
+  <_end: @R> => {
+      let blk_true;
+      match stmt_true.value {
+          ast::StmtTypes::BStmt { block } => { blk_true = block.clone() },
+          _ => {
+              blk_true = ast::Block {
+                  stmts: vec![stmt_true.clone()],
+                  end_loc: Location::new(stmt_true.all_loc.end, stmt_true.all_loc.end),
+              };
+          }
+      }
+
+      let blk_false;
+      match stmt_false.value {
+          ast::StmtTypes::BStmt { block } => { blk_false = block.clone() },
+          _ => {
+              blk_false = ast::Block {
+                  stmts: vec![stmt_false.clone()],
+                  end_loc: Location::new(stmt_false.all_loc.end, stmt_false.all_loc.end),
+              };
+          }
+      }
+
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::CondElse {
+              expr,
+              block_true: blk_true,
+              block_false: blk_false,
+          },
+      }
   }, // CondElse
 
   <_beg: @L>
-    "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt>
-  <_end: @R> => ast::Stmt {
-      all_loc: Location::new(_beg, _end),
-      value: ast::StmtTypes::While {
-          expr,
-          expr_loc: Location::new(loc_1, loc_2),
-          stmt: Box::new(stmt),
-      },
+    "while" "(" <expr: Expr> ")" <stmt: OpenStmt>
+  <_end: @R> => {
+      let blk;
+      match stmt.value {
+          ast::StmtTypes::BStmt { block } => { blk = block.clone() },
+          _ => {
+              blk = ast::Block {
+                  stmts: vec![stmt.clone()],
+                  end_loc: Location::new(stmt.all_loc.end, stmt.all_loc.end),
+              };
+          }
+      }
+
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::While {
+              expr,
+              block: blk,
+          },
+      }
   }, // While
 };
 
@@ -155,26 +217,61 @@ pub ClosedStmt: ast::Stmt = {
   SimpleStmt,
 
   <_beg: @L>
-    "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: ClosedStmt>
-  <_end: @R> => ast::Stmt {
-      all_loc: Location::new(_beg, _end),
-      value: ast::StmtTypes::CondElse {
-          expr,
-          expr_loc: Location::new(loc_1, loc_2),
-          stmt_true: Box::new(stmt_true),
-          stmt_false: Box::new(stmt_false),
-      },
+    "if" "(" <expr: Expr> ")" <stmt_true: ClosedStmt> "else" <stmt_false: ClosedStmt>
+  <_end: @R> => {
+      let blk_true;
+      match stmt_true.value {
+          ast::StmtTypes::BStmt { block } => { blk_true = block.clone() },
+          _ => {
+              blk_true = ast::Block {
+                  stmts: vec![stmt_true.clone()],
+                  end_loc: Location::new(stmt_true.all_loc.end, stmt_true.all_loc.end),
+              };
+          }
+      }
+
+      let blk_false;
+      match stmt_false.value {
+          ast::StmtTypes::BStmt { block } => { blk_false = block.clone() },
+          _ => {
+              blk_false = ast::Block {
+                  stmts: vec![stmt_false.clone()],
+                  end_loc: Location::new(stmt_false.all_loc.end, stmt_false.all_loc.end),
+              };
+          }
+      }
+
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::CondElse {
+              expr,
+              block_true: blk_true,
+              block_false: blk_false,
+          },
+      }
   }, // CondElse
 
   <_beg: @L>
-    "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: ClosedStmt>
-  <_end: @R> => ast::Stmt {
-      all_loc: Location::new(_beg, _end),
-      value: ast::StmtTypes::While {
-          expr,
-          expr_loc: Location::new(loc_1, loc_2),
-          stmt: Box::new(stmt),
-      },
+    "while" "(" <expr: Expr> ")" <stmt: ClosedStmt>
+  <_end: @R> => {
+      let blk;
+      match stmt.value {
+          ast::StmtTypes::BStmt { block } => { blk = block.clone() },
+          _ => {
+              blk = ast::Block {
+                  stmts: vec![stmt.clone()],
+                  end_loc: Location::new(stmt.all_loc.end, stmt.all_loc.end),
+              };
+          }
+      }
+
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::While {
+              expr,
+              block: blk,
+          },
+      }
   }, // While
 };
 
@@ -207,14 +304,13 @@ pub SimpleStmt: ast::Stmt = {
   }, // Decl
 
   <_beg: @L>
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> ";"
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <expr: Expr> ";"
   <_end: @R> => ast::Stmt {
       all_loc: Location::new(_beg, _end),
       value: ast::StmtTypes::Ass {
           ident,
           ident_loc: Location::new(loc_1, loc_2),
           expr,
-          expr_loc: Location::new(loc_3, loc_4),
       },
   }, // Ass
 
@@ -239,22 +335,21 @@ pub SimpleStmt: ast::Stmt = {
   }, // Decr
 
   <_beg: @L>
-    "return" <loc_2: @L> <expr: Expr> <loc_3: @R> ";"
+    <loc_1: @L> "return" <loc_2: @R> <expr: Expr> ";"
   <_end: @R> => ast::Stmt {
       all_loc: Location::new(_beg, _end),
       value: ast::StmtTypes::Ret {
-          value: Some(ast::ExprValue {
-              expr,
-              expr_loc: Location::new(loc_2, loc_3),
-          }),
+          ret_loc: Location::new(loc_1, loc_2),
+          value: Some(expr),
       },
   }, // Ret
 
   <_beg: @L>
-    "return" ";"
+    <loc_1: @L> "return" <loc_2: @R> ";"
   <_end: @R> => ast::Stmt {
       all_loc: Location::new(_beg, _end),
       value: ast::StmtTypes::Ret {
+          ret_loc: Location::new(loc_1, loc_2),
           value: None,
       },
   }, // VRet
@@ -279,10 +374,7 @@ pub Item: ast::Item = {
     <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> => ast::Item {
         ident,
         ident_loc: Location::new(loc_1, loc_2),
-        value: Some(ast::ExprValue {
-            expr,
-            expr_loc: Location::new(loc_3, loc_4),
-        }),
+        value: Some(expr),
     }, // Init
 };
 
@@ -366,22 +458,20 @@ pub Expr4: ast::Expr = {
 
 pub Expr5: ast::Expr = {
   <_beg: @L>
-    "-" <loc_1: @L> <expr: Expr6> <loc_2: @R>
+    "-" <expr: Expr5>
   <_end: @R> => ast::Expr {
       all_loc: Location::new(_beg, _end),
       value: ast::ExprTypes::ENeg {
           expr: Box::new(expr),
-          expr_loc: Location::new(loc_1, loc_2),
       },
   }, // Neg
 
   <_beg: @L>
-    "!" <loc_1: @L> <expr: Expr6> <loc_2: @R>
+    "!" <expr: Expr6>
   <_end: @R> => ast::Expr {
       all_loc: Location::new(_beg, _end),
       value: ast::ExprTypes::ENot {
           expr: Box::new(expr),
-          expr_loc: Location::new(loc_1, loc_2),
       },
   }, // Not
 
@@ -484,5 +574,5 @@ pub PIdent: String = {
 };
 
 pub PString: String = {
-  r#""[[:print:]--"]*""# => String::from(<>),
+  r#""(\\"|[[:print:]--"])*""# => String::from(<>),
 };

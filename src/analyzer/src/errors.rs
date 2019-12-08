@@ -34,7 +34,26 @@ pub enum TypeError {
         op: Operator,
         loc: Location,
         ty: VarType,
-    }
+    },
+    MainReturnType {
+        exp_ty: VarType,
+        ty: VarType,
+        loc: Location,
+    },
+    MainArgumentsCount {
+        exp_cnt: usize,
+        cnt: usize,
+        loc: Location,
+    },
+    InvalidReturnType {
+        ident: String,
+        exp_ty: VarType,
+        ty: VarType,
+        loc: Location,
+    },
+    ReturnVoidType {
+        loc: Location,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,7 +73,11 @@ pub enum SemanticError {
         exp_cnt: usize,
         cnt: usize,
         loc: Location,
-    }
+    },
+    MissingReturn {
+        ident: String,
+        loc: Location,
+    },
 }
 
 macro_rules! bold_it {
@@ -87,12 +110,37 @@ impl TypeError {
             NotAFunction { ty, loc } =>
                 Diagnostic::new_error(
                     "call expression requires function",
-                    Label::new(f_id, loc, format!("type `{}` found here", ty)),
+                    Label::new(f_id, loc, format!("type `{}` found here",
+                                                  ty)),
                 ),
             OperatorUnsupported { op, loc, ty } =>
                 Diagnostic::new_error(
-                    format!("operation `{}` cannot be applied to type `{}`", op, ty),
+                    format!("operation `{}` cannot be applied to type `{}`",
+                            op, ty),
                     Label::new(f_id, loc, format!("")),
+                ),
+            MainReturnType { exp_ty, ty, loc } =>
+                Diagnostic::new_error(
+                    format!("`main` function requires return type `{}` but `{}` was found",
+                            exp_ty, ty),
+                    Label::new(f_id, loc, format!("")),
+                ),
+            MainArgumentsCount { exp_cnt, cnt, loc } =>
+                Diagnostic::new_error(
+                    format!("`main` function requires {} arguments but {} were defined",
+                            exp_cnt, cnt),
+                    Label::new(f_id, loc, format!("function defined here")),
+                ),
+            InvalidReturnType { ident, exp_ty, ty, loc } =>
+                Diagnostic::new_error(
+                    format!("function `{}` requires return type `{}` but `{}` was found",
+                            ident, exp_ty, ty),
+                    Label::new(f_id, loc, format!("return defined here")),
+                ),
+            ReturnVoidType { loc } =>
+                Diagnostic::new_error(
+                    format!("cannot return a `void` value"),
+                    Label::new(f_id, loc, format!("has type `{}`", bold_it!["void"])),
                 ),
         }
     }
@@ -126,6 +174,11 @@ impl SemanticError {
                     format!("function `{}` takes {} arguments but {} were provided",
                             ident, exp_cnt, cnt),
                     Label::new(f_id, loc, format!("expected {} arguments", exp_cnt)),
+                ),
+            MissingReturn { ident, loc } =>
+                Diagnostic::new_error(
+                    format!("missing return in the function `{}` body", ident),
+                    Label::new(f_id, loc, format!("return expected after this statement")),
                 ),
         }
     }

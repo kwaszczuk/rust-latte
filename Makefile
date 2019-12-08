@@ -7,7 +7,7 @@ build_x86 build_latc:
 	cp target/release/$(BINARY_NAME) .
 
 parser:
-	cargo build --release --message-format short --manifest-path src/parser/generate/Cargo.toml
+	cargo build --release --manifest-path src/parser/generate/Cargo.toml
 
 clean:
 	rm -rf target/ latc*

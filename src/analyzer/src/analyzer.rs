@@ -66,9 +66,8 @@ macro_rules! throw_if_unmatched_type {
 macro_rules! analyse_expr_and_match_type {
     ( $self:expr, $expr:expr, $exp_ty:expr, $loc:expr ) => {
         {
-            match $self.analyse_expression($expr) {
-                Ok(ty) => throw_if_unmatched_type![$self, $exp_ty, ty, $loc],
-                Err(_) => false
+            if let Ok(ty) = $self.analyse_expression($expr) {
+                throw_if_unmatched_type![$self, $exp_ty, ty, $loc];
             }
         }
     };
@@ -98,29 +97,39 @@ impl SemanticAnalyzer {
     fn analyse_program(&mut self, program: &ast::Program) {
         self.symbol_table.begin_scope();
 
+        let mut good_fns = vec![];
+
         for fn_def in &program.defs {
+            // check if variable got defined previously in current scope
+            if let Some(ent) = self.symbol_table.get_from_current_scope(&fn_def.ident) {
+               self.throw(SemanticError(VariableRedefiniton {
+                   ident: fn_def.ident.clone(),
+                   loc: fn_def.ident_loc.clone(),
+                   prev_loc: ent.ident_loc.clone()
+               }));
+               continue;
+            }
+
             self.analyse_function_definition(fn_def);
 
             // add all functions to the scope (enable recursion with any function)
             self.symbol_table.insert(fn_def.ident.clone(), SymbolTableEntity::new(
-                VarType::Fun {
+                VarType::Fun(FunType {
                     ret: SimpleType::from(&fn_def.ty),
                     args: fn_def.args.iter().map(|a| SimpleType::from(&a.ty)).collect()
-                },
+                }),
                 fn_def.ty_loc.clone(),
                 fn_def.ident_loc.clone()
             ));
+            good_fns.push(fn_def.clone());
         }
 
         // check if `main` function exist
-        match self.symbol_table.get(&"main".to_string()) {
-            None => {
-                self.throw(SemanticError(MissingEntrypoint));
-            }
-            _ => {}
+        if let None = self.symbol_table.get(&"main".to_string()) {
+            self.throw(SemanticError(MissingEntrypoint));
         }
 
-        for fn_def in &program.defs {
+        for fn_def in &good_fns {
             self.symbol_table.begin_scope();
             // initialize function parameters, before analyzing the function body
             for arg in &fn_def.args {
@@ -173,14 +182,17 @@ impl SemanticAnalyzer {
     }
 
     fn analyse_statement(&mut self, stmt: &ast::Stmt) {
-        use base::ast::Stmt::*;
-        match stmt {
+        use base::ast::StmtTypes::*;
+
+        match &stmt.value {
             Empty => {},
+
             BStmt { block } => {
                 self.symbol_table.begin_scope();
-                self.analyse_block(block);
+                self.analyse_block(&block);
                 self.symbol_table.end_scope();
             },
+
             Decl { ty, ty_loc, items } => {
                 let is_void_type = ty == &ast::Type::Void;
 
@@ -194,16 +206,13 @@ impl SemanticAnalyzer {
                     }
 
                     // check if variable got defined previously in current scope
-                    match self.symbol_table.get_from_current_scope(&item.ident) {
-                        Some(ent) => {
-                           self.throw(SemanticError(VariableRedefiniton {
-                               ident: item.ident.clone(),
-                               loc: item.ident_loc.clone(),
-                               prev_loc: ent.ident_loc.clone()
-                           }));
-                           continue;
-                        },
-                        None => {}
+                    if let Some(ent) = self.symbol_table.get_from_current_scope(&item.ident) {
+                       self.throw(SemanticError(VariableRedefiniton {
+                           ident: item.ident.clone(),
+                           loc: item.ident_loc.clone(),
+                           prev_loc: ent.ident_loc.clone()
+                       }));
+                       continue;
                     }
 
                     // add variable to the scope
@@ -226,14 +235,16 @@ impl SemanticAnalyzer {
                     }
                 }
             },
+
             Ass { ident, ident_loc, expr, expr_loc } => {
                 if throw_if_undeclared!(self, ident, ident_loc) { return; }
                 let var = self.symbol_table.get(&ident).unwrap();
 
-                analyse_expr_and_match_type![self, expr, var.ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, var.ty, expr_loc];
             },
-            Incr { ident, ident_loc, all_loc } |
-            Decr { ident, ident_loc, all_loc } => {
+
+            Incr { ident, ident_loc } |
+            Decr { ident, ident_loc } => {
                 if throw_if_undeclared!(self, ident, ident_loc) { return; }
 
                 let var = self.symbol_table.get(&ident).unwrap();
@@ -241,52 +252,195 @@ impl SemanticAnalyzer {
 
                 throw_if_unmatched_type!(self, exp_ty, var.ty, ident_loc);
             },
-            Ret { value, all_loc } => {
-            }
+
+            Ret { value: _ } => {}
+
             Cond { expr, expr_loc, stmt } => {
                 let cond_exp_ty = VarType::Simple(SimpleType::Bool);
-                analyse_expr_and_match_type![self, expr, cond_exp_ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, cond_exp_ty, expr_loc];
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(stmt);
+                self.analyse_statement(&stmt);
                 self.symbol_table.end_scope();
             },
+
             CondElse { expr, expr_loc, stmt_true, stmt_false } => {
                 let cond_exp_ty = VarType::Simple(SimpleType::Bool);
-                analyse_expr_and_match_type![self, expr, cond_exp_ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, cond_exp_ty, expr_loc];
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(stmt_true);
+                self.analyse_statement(&stmt_true);
                 self.symbol_table.end_scope();
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(stmt_false);
+                self.analyse_statement(&stmt_false);
                 self.symbol_table.end_scope();
             },
+
             While { expr, expr_loc, stmt } => {
                 let while_exp_ty = VarType::Simple(SimpleType::Bool);
-                analyse_expr_and_match_type![self, expr, while_exp_ty, expr_loc];
+                analyse_expr_and_match_type![self, &expr, while_exp_ty, expr_loc];
 
                 self.symbol_table.begin_scope();
-                self.analyse_statement(stmt);
+                self.analyse_statement(&stmt);
                 self.symbol_table.end_scope();
             },
+
             SExp { expr } => {
-                self.analyse_expression(expr);
-            }
-            _ => {}
+                self.analyse_expression(&expr);
+            },
         }
     }
 
     fn analyse_expression(&mut self, expr: &ast::Expr) -> Result<VarType, ()> {
-        use ast::Expr::*;
+        use ast::ExprTypes::*;
         use VarType::*;
         use SimpleType::*;
-        match expr {
-            ELitInt { value } => Ok(Simple(Int)),
-            ELitTrue => Ok(Simple(Bool)),
+
+        match &expr.value {
+            EOr { expr1, expr2 } => {
+                let exp_ty = Simple(Bool);
+                analyse_expr_and_match_type![self, expr1, exp_ty, expr1.all_loc];
+                analyse_expr_and_match_type![self, expr2, exp_ty, expr2.all_loc];
+                Ok(exp_ty)
+            },
+
+            EAnd { expr1, expr2 } => {
+                let exp_ty = Simple(Bool);
+                analyse_expr_and_match_type![self, expr1, exp_ty, expr1.all_loc];
+                analyse_expr_and_match_type![self, expr2, exp_ty, expr2.all_loc];
+                Ok(exp_ty)
+            },
+
+            ERel { op, op_loc, expr1, expr2 } => {
+                let expr1_res = self.analyse_expression(&expr1);
+                let expr2_res = self.analyse_expression(&expr2);
+                if let Ok(expr1_ty) = expr1_res {
+                    if expr1_ty.supports_operator(op) {
+                        if let Ok(expr2_ty) = expr2_res {
+                            throw_if_unmatched_type![self, expr1_ty, expr2_ty, expr2.all_loc];
+                            return Ok(expr1_ty)
+                        }
+                    } else {
+                        self.throw(TypeError(OperatorUnsupported {
+                            op: op.clone(),
+                            loc: op_loc.clone(),
+                            ty: expr1_ty.clone(),
+                        }));
+                    }
+                }
+                Err(())
+            },
+
+            EAdd { op, op_loc, expr1, expr2 } => {
+                let expr1_res = self.analyse_expression(&expr1);
+                let expr2_res = self.analyse_expression(&expr2);
+                if let Ok(expr1_ty) = expr1_res {
+                    if expr1_ty.supports_operator(op) {
+                        if let Ok(expr2_ty) = expr2_res {
+                            throw_if_unmatched_type![self, expr1_ty, expr2_ty, expr2.all_loc];
+                            return Ok(expr1_ty)
+                        }
+                    } else {
+                        self.throw(TypeError(OperatorUnsupported {
+                            op: op.clone(),
+                            loc: op_loc.clone(),
+                            ty: expr1_ty.clone(),
+                        }));
+                    }
+                }
+                Err(())
+            },
+
+            EMul { op, op_loc, expr1, expr2 } => {
+                let expr1_res = self.analyse_expression(&expr1);
+                let expr2_res = self.analyse_expression(&expr2);
+                if let Ok(expr1_ty) = expr1_res {
+                    if expr1_ty.supports_operator(op) {
+                        if let Ok(expr2_ty) = expr2_res {
+                            throw_if_unmatched_type![self, expr1_ty, expr2_ty, expr2.all_loc];
+                            return Ok(expr1_ty)
+                        }
+                    } else {
+                        self.throw(TypeError(OperatorUnsupported {
+                            op: op.clone(),
+                            loc: op_loc.clone(),
+                            ty: expr1_ty.clone(),
+                        }));
+                    }
+                }
+                Err(())
+            },
+
+            ENeg { expr, expr_loc } => {
+                let exp_ty = Simple(Int);
+                if let Ok(ty) = self.analyse_expression(&expr) {
+                    if throw_if_unmatched_type![self, exp_ty, ty, expr_loc] {
+                        return Ok(exp_ty)
+                    }
+                }
+                Err(())
+            },
+
+            ENot { expr, expr_loc } => {
+                let exp_ty = Simple(Bool);
+                if let Ok(ty) = self.analyse_expression(&expr) {
+                    if throw_if_unmatched_type![self, exp_ty, ty, expr_loc] {
+                        return Ok(exp_ty)
+                    }
+                }
+                Err(())
+            },
+
+            EVar { ident, ident_loc } => {
+                if throw_if_undeclared!(self, ident, ident_loc) {
+                    return Err(())
+                }
+                Ok(self.symbol_table.get(&ident).unwrap().ty)
+            },
+
+            ELitInt { value: _ } => Ok(Simple(Int)),
+
+            ELitTrue |
             ELitFalse => Ok(Simple(Bool)),
-            EString { value } => Ok(Simple(Str)),
+
+            EApp { ident, ident_loc, args, args_loc: _ } => {
+                if throw_if_undeclared!(self, ident, ident_loc) {
+                    return Err(())
+                }
+
+                // check whether it's a function identifier
+                match self.symbol_table.get(&ident).unwrap().ty {
+                    Fun(fn_ty) => {
+                        // check if function got called with correct number of arguments
+                        if args.len() != fn_ty.args.len() {
+                           self.throw(SemanticError(FunctionArgumentsCount {
+                               exp_cnt: fn_ty.args.len(),
+                               cnt: args.len(),
+                               ident: ident.clone(),
+                               loc: ident_loc.clone(),
+                           }));
+                           Err(())
+                        } else {
+                            // check arguments' types
+                            for (expr, exp_ty) in args.iter().zip(fn_ty.args) {
+                                analyse_expr_and_match_type![self, expr, Simple(exp_ty.clone()), expr.all_loc];
+                            }
+                            Ok(Simple(fn_ty.ret))
+                        }
+                    },
+                    t => {
+                        self.throw(TypeError(NotAFunction {
+                            ty: t,
+                            loc: ident_loc.clone(),
+                        }));
+                        Err(())
+                    }
+                }
+            },
+
+            EString { value: _ } => Ok(Simple(Str)),
+
             _ => Err(())
         }
     }

@@ -1,12 +1,13 @@
 use std::vec::Vec;
 use crate::types::*;
 
+use base::ast::{Operator};
 use base::types::{Location};
 
 use codespan::{Files, FileId};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-use codespan_reporting::term::{emit, Config, Styles, Chars, DisplayStyle};
+use codespan_reporting::term::{emit, Styles, Chars, DisplayStyle};
 use parser::{get_content_wo_comments};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -24,6 +25,15 @@ pub enum TypeError {
         exp_ty: VarType,
         ty: VarType,
         loc: Location,
+    },
+    NotAFunction {
+        ty: VarType,
+        loc: Location,
+    },
+    OperatorUnsupported {
+        op: Operator,
+        loc: Location,
+        ty: VarType,
     }
 }
 
@@ -39,6 +49,12 @@ pub enum SemanticError {
         ident: String,
         loc: Location,
     },
+    FunctionArgumentsCount {
+        ident: String,
+        exp_cnt: usize,
+        cnt: usize,
+        loc: Location,
+    }
 }
 
 macro_rules! bold_it {
@@ -68,6 +84,16 @@ impl TypeError {
                     format!("expected type `{}`", bold_it![exp_ty]),
                     format!("   found type `{}`", bold_it![ty]),
                 ]),
+            NotAFunction { ty, loc } =>
+                Diagnostic::new_error(
+                    "call expression requires function",
+                    Label::new(f_id, loc, format!("type `{}` found here", ty)),
+                ),
+            OperatorUnsupported { op, loc, ty } =>
+                Diagnostic::new_error(
+                    format!("operation `{}` cannot be applied to type `{}`", op, ty),
+                    Label::new(f_id, loc, format!("")),
+                ),
         }
     }
 }
@@ -95,7 +121,12 @@ impl SemanticError {
                     format!("undeclared variable `{}`", ident),
                     Label::new(f_id, loc, ""),
                 ),
-
+            FunctionArgumentsCount { ident, exp_cnt, cnt, loc } =>
+                Diagnostic::new_error(
+                    format!("function `{}` takes {} arguments but {} were provided",
+                            ident, exp_cnt, cnt),
+                    Label::new(f_id, loc, format!("expected {} arguments", exp_cnt)),
+                ),
         }
     }
 }

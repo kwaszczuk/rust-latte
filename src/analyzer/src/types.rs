@@ -11,6 +11,12 @@ pub enum SimpleType {
     Void
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct FunType {
+    pub ret: SimpleType,
+    pub args: Vec<SimpleType>
+}
+
 impl fmt::Display for SimpleType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use SimpleType::*;
@@ -26,9 +32,70 @@ impl fmt::Display for SimpleType {
 #[derive(Debug, PartialEq, Clone)]
 pub enum VarType {
     Simple(SimpleType),
-    Fun {
-        ret: SimpleType,
-        args: Vec<SimpleType>
+    Fun(FunType),
+}
+
+impl VarType {
+    pub fn supports_operator(&self, op: &ast::Operator) -> bool {
+        match op {
+            ast::Operator::RelOp(rel_op) => match self {
+                VarType::Simple(SimpleType::Int)
+              | VarType::Simple(SimpleType::Bool)
+              | VarType::Simple(SimpleType::Str) => true,
+
+                VarType::Simple(SimpleType::Void)
+              | VarType::Fun(_) => false,
+            },
+
+            ast::Operator::MulOp(mul_op) => match mul_op {
+                ast::MulOp::Times => match self {
+                    VarType::Simple(SimpleType::Int)
+                  | VarType::Simple(SimpleType::Bool) => true,
+
+                    VarType::Simple(SimpleType::Str)
+                  | VarType::Simple(SimpleType::Void)
+                  | VarType::Fun(_) => false,
+                },
+
+                ast::MulOp::Div => match self {
+                    VarType::Simple(SimpleType::Int) => true,
+
+                    VarType::Simple(SimpleType::Bool)
+                  | VarType::Simple(SimpleType::Str)
+                  | VarType::Simple(SimpleType::Void)
+                  | VarType::Fun(_) => false,
+                },
+
+                ast::MulOp::Mod => match self {
+                    VarType::Simple(SimpleType::Int) => true,
+
+                    VarType::Simple(SimpleType::Bool)
+                  | VarType::Simple(SimpleType::Str)
+                  | VarType::Simple(SimpleType::Void)
+                  | VarType::Fun(_) => false,
+                },
+            },
+
+            ast::Operator::AddOp(add_op) => match add_op {
+                ast::AddOp::Plus => match self {
+                    VarType::Simple(SimpleType::Int)
+                  | VarType::Simple(SimpleType::Bool)
+                  | VarType::Simple(SimpleType::Str)
+                  | VarType::Simple(SimpleType::Void) => true,
+
+                    VarType::Fun(_) => false,
+                },
+
+                ast::AddOp::Minus => match self {
+                    VarType::Simple(SimpleType::Int)
+                  | VarType::Simple(SimpleType::Bool) => true,
+
+                    VarType::Simple(SimpleType::Str)
+                  | VarType::Simple(SimpleType::Void)
+                  | VarType::Fun(_) => false,
+                },
+            },
+        }
     }
 }
 
@@ -37,7 +104,7 @@ impl fmt::Display for VarType {
         use VarType::*;
         match self {
             Simple(t) => write!(f, "{}", t),
-            Fun { ret, args } => {
+            Fun(FunType { ret, args }) => {
                 let args_vec_str: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 let args_str = args_vec_str.join(", ");
                 write!(f, "({}) -> {}", args_str, ret)

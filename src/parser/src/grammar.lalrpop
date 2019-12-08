@@ -22,6 +22,19 @@ Empty: () = {
     // <!> => errors.push(<>.error)
 };
 
+LocatedList<Rule, Separator>: Vec<Rule> =
+  <list: (<Rule> <Separator>)*> <last: Rule?> => {
+    let mut rules = Vec::new();
+    for (rule, sep) in list {
+      rules.push(rule);
+    }
+    match last {
+      Some(rule) => rules.push(rule),
+      _ => (),
+    }
+    rules
+  };
+
 List<Rule, Separator>: Vec<Rule> =
   <list: (<Rule> <Separator>)*> <last: Rule?> => {
     let mut rules = Vec::new();
@@ -59,11 +72,11 @@ pub Program: ast::Program = {
 };
 
 pub TopDef: ast::FnDef = {
-  <loc_1: @L> <ty: Type> <loc_2: @R> <loc_3: @L> <ident: PIdent> <loc_4: @R> "(" <args: List<Arg, Comma>> ")" <block: Block> =>ast::FnDef {
+  <loc_1: @L> <ty: Type> <loc_2: @R> <loc_3: @L> <ident: PIdent> <loc_4: @R> "(" <args: List<Arg, Comma>> ")" <block: Block> => ast::FnDef {
       ty,
-      ty_loc: Location { begin: loc_1, end: loc_2 },
+      ty_loc: Location::new(loc_1, loc_2),
       ident,
-      ident_loc: Location { begin: loc_3, end: loc_4 },
+      ident_loc: Location::new(loc_3, loc_4),
       args,
       block,
   }, // FnDef
@@ -72,9 +85,9 @@ pub TopDef: ast::FnDef = {
 pub Arg: ast::Arg = {
   <loc_1: @L> <ty: Type> <loc_2: @R> <loc_3: @L> <ident: PIdent> <loc_4: @R> => ast::Arg {
       ty,
-      ty_loc: Location { begin: loc_1, end: loc_2 },
+      ty_loc: Location::new(loc_1, loc_2),
       ident,
-      ident_loc: Location { begin: loc_3, end: loc_4 },
+      ident_loc: Location::new(loc_3, loc_4),
   }, // Arg
 };
 
@@ -92,205 +105,372 @@ pub Stmt: ast::Stmt = {
 };
 
 pub OpenStmt: ast::Stmt = {
-  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: SimpleStmt> => ast::Stmt::Cond {
-      expr,
-      expr_loc: Location { begin: loc_1, end: loc_2 },
-      stmt: Box::new(stmt),
+  <_beg: @L>
+      "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: SimpleStmt>
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Cond {
+          expr,
+          expr_loc: Location::new(loc_1, loc_2),
+          stmt: Box::new(stmt),
+      },
   }, // Cond
 
-  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt> => ast::Stmt::Cond {
-      expr,
-      expr_loc: Location { begin: loc_1, end: loc_2 },
-      stmt: Box::new(stmt),
+  <_beg: @L>
+      "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt>
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Cond {
+          expr,
+          expr_loc: Location::new(loc_1, loc_2),
+          stmt: Box::new(stmt),
+      }
   }, // Cond
 
-  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: OpenStmt> => ast::Stmt::CondElse {
-      expr,
-      expr_loc: Location { begin: loc_1, end: loc_2 },
-      stmt_true: Box::new(stmt_true),
-      stmt_false: Box::new(stmt_false),
+  <_beg: @L>
+    "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: OpenStmt>
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::CondElse {
+          expr,
+          expr_loc: Location::new(loc_1, loc_2),
+          stmt_true: Box::new(stmt_true),
+          stmt_false: Box::new(stmt_false),
+      },
   }, // CondElse
 
-  "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt> => ast::Stmt::While {
-      expr,
-      expr_loc: Location { begin: loc_1, end: loc_2 },
-      stmt: Box::new(stmt),
+  <_beg: @L>
+    "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: OpenStmt>
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::While {
+          expr,
+          expr_loc: Location::new(loc_1, loc_2),
+          stmt: Box::new(stmt),
+      },
   }, // While
 };
 
 pub ClosedStmt: ast::Stmt = {
   SimpleStmt,
 
-  "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: ClosedStmt> => ast::Stmt::CondElse {
-      expr,
-      expr_loc: Location { begin: loc_1, end: loc_2 },
-      stmt_true: Box::new(stmt_true),
-      stmt_false: Box::new(stmt_false),
+  <_beg: @L>
+    "if" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt_true: ClosedStmt> "else" <stmt_false: ClosedStmt>
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::CondElse {
+          expr,
+          expr_loc: Location::new(loc_1, loc_2),
+          stmt_true: Box::new(stmt_true),
+          stmt_false: Box::new(stmt_false),
+      },
   }, // CondElse
 
-  "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: ClosedStmt> => ast::Stmt::While {
-      expr,
-      expr_loc: Location { begin: loc_1, end: loc_2 },
-      stmt: Box::new(stmt),
+  <_beg: @L>
+    "while" "(" <loc_1: @L> <expr: Expr> <loc_2: @R> ")" <stmt: ClosedStmt>
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::While {
+          expr,
+          expr_loc: Location::new(loc_1, loc_2),
+          stmt: Box::new(stmt),
+      },
   }, // While
 };
 
 pub SimpleStmt: ast::Stmt = {
-  ";" => ast::Stmt::Empty, // Empty
+  <_beg: @L>
+    ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Empty,
+  }, // Empty
 
-  <block: Block> => ast::Stmt::BStmt { <> }, // BStmt
+  <_beg: @L>
+    <block: Block>
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::BStmt {
+          block,
+      }
+  }, // BStmt
 
-  <loc_1: @L> <ty: Type> <loc_2: @R> <items: List<Item, Comma>> ";" => ast::Stmt::Decl { // Decl
-      ty,
-      ty_loc: Location { begin: loc_1, end: loc_2 },
-      items,
-  },
+  <_beg: @L>
+    <loc_1: @L> <ty: Type> <loc_2: @R> <items: List<Item, Comma>> ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Decl {
+          ty,
+          ty_loc: Location::new(loc_1, loc_2),
+          items,
+      },
+  }, // Decl
 
-  <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> ";" => ast::Stmt::Ass { // Ass
-      ident,
-      ident_loc: Location { begin: loc_1, end: loc_2 },
-      expr,
-      expr_loc: Location { begin: loc_3, end: loc_4 },
-  },
-
-  <loc_1: @L> <ident: PIdent> <loc_2: @R> "++" <loc_3: @R> ";" => ast::Stmt::Incr { // Incr
-      ident,
-      ident_loc: Location { begin: loc_1, end: loc_2 },
-      all_loc: Location { begin: loc_1, end: loc_3 },
-  },
-
-  <loc_1: @L> <ident: PIdent> <loc_2: @R> "--" <loc_3: @R> ";" => ast::Stmt::Decr { // Decr
-      ident,
-      ident_loc: Location { begin: loc_1, end: loc_2 },
-      all_loc: Location { begin: loc_1, end: loc_3 },
-  },
-
-  <loc_1: @L> "return" <loc_2: @L> <expr: Expr> <loc_3: @R> ";" => ast::Stmt::Ret { // Ret
-      value: Some(ast::ExprValue {
+  <_beg: @L>
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Ass {
+          ident,
+          ident_loc: Location::new(loc_1, loc_2),
           expr,
-          expr_loc: Location { begin: loc_2, end: loc_3 },
-      }),
-      all_loc: Location { begin: loc_1, end: loc_3 },
-  },
+          expr_loc: Location::new(loc_3, loc_4),
+      },
+  }, // Ass
 
-  <loc_1: @L> "return" <loc_2: @R> ";" => ast::Stmt::Ret { // VRet
-      value: None,
-      all_loc: Location { begin: loc_1, end: loc_2 },
-  },
+  <_beg: @L>
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> "++" ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Incr {
+          ident,
+          ident_loc: Location::new(loc_1, loc_2),
+      },
+  }, // Incr
 
-  <expr: Expr> ";" => ast::Stmt::SExp { <> }, // SExp
+  <_beg: @L>
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> "--" ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Decr {
+          ident,
+          ident_loc: Location::new(loc_1, loc_2),
+      },
+  }, // Decr
+
+  <_beg: @L>
+    "return" <loc_2: @L> <expr: Expr> <loc_3: @R> ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Ret {
+          value: Some(ast::ExprValue {
+              expr,
+              expr_loc: Location::new(loc_2, loc_3),
+          }),
+      },
+  }, // Ret
+
+  <_beg: @L>
+    "return" ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::Ret {
+          value: None,
+      },
+  }, // VRet
+
+  <_beg: @L>
+    <expr: Expr> ";"
+  <_end: @R> => ast::Stmt {
+      all_loc: Location::new(_beg, _end),
+      value: ast::StmtTypes::SExp {
+          expr,
+      },
+  }, // SExp
 };
 
 pub Item: ast::Item = {
     <loc_1: @L> <ident: PIdent> <loc_2: @R> => ast::Item {
         ident,
-        ident_loc: Location { begin: loc_1, end: loc_2 },
+        ident_loc: Location::new(loc_1, loc_2),
         value: None,
     }, // NoInit
 
     <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <loc_3: @L> <expr: Expr> <loc_4: @R> => ast::Item {
         ident,
-        ident_loc: Location { begin: loc_1, end: loc_2 },
+        ident_loc: Location::new(loc_1, loc_2),
         value: Some(ast::ExprValue {
             expr,
-            expr_loc: Location { begin: loc_3, end: loc_4 },
+            expr_loc: Location::new(loc_3, loc_4),
         }),
-    },   // Init
+    }, // Init
 };
 
 // ------------------- EXPRESSIONS -------------------
 
 pub Expr: ast::Expr = {
-    <expr1 :Expr1> "||" <expr2: Expr> => ast::Expr::EOr { // EOr
-        expr1: Box::new(expr1),
-        expr2: Box::new(expr2),
-    },
-    Expr1,
+  <_beg: @L>
+    <expr1: Expr1> "||" <expr2: Expr>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EOr {
+          expr1: Box::new(expr1),
+          expr2: Box::new(expr2),
+      },
+  }, // EOr
+
+  Expr1,
 };
 
 pub Expr1: ast::Expr = {
-    <expr1: Expr2> "&&" <expr2: Expr1> => ast::Expr::EAnd {
-        expr1: Box::new(expr1),
-        expr2: Box::new(expr2),
-    }, // EAnd
-    Expr2,
+  <_beg: @L>
+    <expr1: Expr2> "&&" <expr2: Expr1>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EAnd {
+          expr1: Box::new(expr1),
+          expr2: Box::new(expr2),
+      },
+  }, // EAnd
+
+  Expr2,
 };
 
 pub Expr2: ast::Expr = {
-    <expr1: Expr2> <op: RelOp> <expr2: Expr3> => ast::Expr::ERel {
-        op,
-        expr1: Box::new(expr1),
-        expr2: Box::new(expr2),
-    }, // ERel
-    Expr3,
+  <_beg: @L>
+    <expr1: Expr2> <loc_1: @L> <op: RelOp> <loc_2: @R> <expr2: Expr3>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::ERel {
+          op,
+          op_loc: Location::new(loc_1, loc_2),
+          expr1: Box::new(expr1),
+          expr2: Box::new(expr2),
+      },
+  }, // ERel
+
+  Expr3,
 };
 
 pub Expr3: ast::Expr = {
-    <expr1: Expr3> <op: AddOp> <expr2: Expr4> => ast::Expr::EAdd {
-        op,
-        expr1: Box::new(expr1),
-        expr2: Box::new(expr2),
-    }, // EAdd
-    Expr4,
+  <_beg: @L>
+    <expr1: Expr3> <loc_1: @L> <op: AddOp> <loc_2: @R> <expr2: Expr4>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EAdd {
+          op,
+          op_loc: Location::new(loc_1, loc_2),
+          expr1: Box::new(expr1),
+          expr2: Box::new(expr2),
+      },
+  }, // EAdd
+
+  Expr4,
 };
 
 pub Expr4: ast::Expr = {
-    <expr1: Expr4> <op: MulOp> <expr2: Expr5> => ast::Expr::EMul {
-        op,
-        expr1: Box::new(expr1),
-        expr2: Box::new(expr2),
-    }, // EMul
-    Expr5,
+  <_beg: @L>
+    <expr1: Expr4> <loc_1: @L> <op: MulOp> <loc_2: @R> <expr2: Expr5>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EMul {
+          op,
+          op_loc: Location::new(loc_1, loc_2),
+          expr1: Box::new(expr1),
+          expr2: Box::new(expr2),
+      },
+  }, // EMul
+
+  Expr5,
 };
 
 pub Expr5: ast::Expr = {
-    "-" <expr: Expr6> => ast::Expr::ENeg {
-        expr: Box::new(expr),
-    }, // Neg
-    "!" <expr: Expr6> => ast::Expr::ENot {
-        expr: Box::new(expr),
-    }, // Not
-    Expr6,
+  <_beg: @L>
+    "-" <loc_1: @L> <expr: Expr6> <loc_2: @R>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::ENeg {
+          expr: Box::new(expr),
+          expr_loc: Location::new(loc_1, loc_2),
+      },
+  }, // Neg
+
+  <_beg: @L>
+    "!" <loc_1: @L> <expr: Expr6> <loc_2: @R>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::ENot {
+          expr: Box::new(expr),
+          expr_loc: Location::new(loc_1, loc_2),
+      },
+  }, // Not
+
+  Expr6,
 };
 
 pub Expr6: ast::Expr = {
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> => ast::Expr::EVar {
-        ident,
-        ident_loc: Location { begin: loc_1, end: loc_2 },
-    }, // EVar
-    <value: PInteger> => ast::Expr::ELitInt { <> },   // ELitInt
-    "true" => ast::Expr::ELitTrue {},  // ELitTrue
-    "false" => ast::Expr::ELitFalse {}, // ELitFalse
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> "(" <loc_3: @L> <args: List<Expr, Comma>> <loc_4: @R>  ")" => ast::Expr::EApp {
-        ident,
-        ident_loc: Location { begin: loc_1, end: loc_2 },
-        args,
-        args_loc: Location { begin: loc_3, end: loc_4 },
-    },      // EApp
-    <value: PString>  => ast::Expr::EString { <> },   // EString
-    "(" <expr: Expr> ")" => expr,
+  <_beg: @L>
+    <loc_1: @L> <ident: PIdent> <loc_2: @R>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EVar {
+          ident,
+          ident_loc: Location::new(loc_1, loc_2),
+      },
+  }, // EVar
+
+  <_beg: @L>
+    <value: PInteger>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::ELitInt {
+          value,
+      },
+  }, // ELitInt
+
+  <_beg: @L>
+    "true"
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::ELitTrue {},
+  }, // ELitTrue
+
+  <_beg: @L>
+    "false"
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::ELitFalse {},
+  }, // ELitFalse
+
+  <_beg: @L>
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> "(" <loc_3: @L> <args: List<Expr, Comma>> <loc_4: @R>  ")"
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EApp {
+          ident,
+          ident_loc: Location::new(loc_1, loc_2),
+          args,
+          args_loc: Location::new(loc_3, loc_4),
+      },
+  }, // EApp
+
+  <_beg: @L>
+    <value: PString>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EString {
+          value,
+      },
+  }, // EString
+
+  <_beg: @L>
+    "(" <expr: Expr> ")"
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: expr.value,
+  },
 };
 
 // ------------------- Operators -------------------
 
-pub AddOp: ast::AddOp = {
-    "+" => ast::AddOp::Plus,  // Plus
-    "-" => ast::AddOp::Minus, // Minus
+pub AddOp: ast::Operator = {
+    "+" => ast::Operator::AddOp(ast::AddOp::Plus),  // Plus
+    "-" => ast::Operator::AddOp(ast::AddOp::Minus), // Minus
 };
 
-pub MulOp: ast::MulOp = {
-    "*" => ast::MulOp::Times, // Times
-    "/" => ast::MulOp::Div,   // Div
-    "%" => ast::MulOp::Mod,   // Mod
+pub MulOp: ast::Operator = {
+    "*" => ast::Operator::MulOp(ast::MulOp::Times), // Times
+    "/" => ast::Operator::MulOp(ast::MulOp::Div),   // Div
+    "%" => ast::Operator::MulOp(ast::MulOp::Mod),   // Mod
 };
 
-pub RelOp: ast::RelOp = {
-    "<"  => ast::RelOp::LTH, // LTH
-    "<=" => ast::RelOp::LE,  // LE
-    ">"  => ast::RelOp::GTH, // GTH
-    ">=" => ast::RelOp::GE,  // GE
-    "==" => ast::RelOp::EQU, // EQU
-    "!=" => ast::RelOp::NE,  // NE
+pub RelOp: ast::Operator = {
+    "<"  => ast::Operator::RelOp(ast::RelOp::LTH), // LTH
+    "<=" => ast::Operator::RelOp(ast::RelOp::LE),  // LE
+    ">"  => ast::Operator::RelOp(ast::RelOp::GTH), // GTH
+    ">=" => ast::Operator::RelOp(ast::RelOp::GE),  // GE
+    "==" => ast::Operator::RelOp(ast::RelOp::EQU), // EQU
+    "!=" => ast::Operator::RelOp(ast::RelOp::NE),  // NE
 };
 
 // ------------------- BASIC PARSING TYPES -------------------

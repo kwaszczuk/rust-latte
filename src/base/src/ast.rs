@@ -1,6 +1,6 @@
-use std::fmt::{Debug, Error, Formatter};
+use std::fmt;
 
-use crate::types::Location;
+use crate::types::{Location, Located};
 
 #[derive(Debug, PartialEq)]
 pub enum Type {
@@ -52,8 +52,9 @@ pub struct ExprValue {
 }
 
 
+pub type Stmt = Located<StmtTypes>;
 #[derive(Debug, PartialEq)]
-pub enum Stmt {
+pub enum StmtTypes {
     Empty,
     BStmt {
         block: Block,
@@ -72,16 +73,13 @@ pub enum Stmt {
     Incr {
         ident: String,
         ident_loc: Location,
-        all_loc: Location,
     },
     Decr {
         ident: String,
         ident_loc: Location,
-        all_loc: Location,
     },
     Ret {
         value: Option<ExprValue>,
-        all_loc: Location,
     },
     Cond {
         expr: Expr,
@@ -104,8 +102,9 @@ pub enum Stmt {
     },
 }
 
+pub type Expr = Located<ExprTypes>;
 #[derive(Debug, PartialEq)]
-pub enum Expr {
+pub enum ExprTypes {
     EOr {
         expr1: Box<Expr>,
         expr2: Box<Expr>,
@@ -115,25 +114,30 @@ pub enum Expr {
         expr2: Box<Expr>,
     },
     ERel {
-        op: RelOp,
+        op: Operator,
+        op_loc: Location,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     EAdd {
-        op: AddOp,
+        op: Operator,
+        op_loc: Location,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     EMul {
-        op: MulOp,
+        op: Operator,
+        op_loc: Location,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
     },
     ENeg {
         expr: Box<Expr>,
+        expr_loc: Location,
     },
     ENot {
         expr: Box<Expr>,
+        expr_loc: Location,
     },
     EVar {
         ident: String,
@@ -155,20 +159,41 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum AddOp {
     Plus,
     Minus,
 }
 
-#[derive(Debug, PartialEq)]
+impl fmt::Display for AddOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use AddOp::*;
+        match self {
+            Plus => write!(f, "+"),
+            Minus => write!(f, "-"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum MulOp {
     Times,
     Div,
     Mod,
 }
 
-#[derive(Debug, PartialEq)]
+impl fmt::Display for MulOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use MulOp::*;
+        match self {
+            Times => write!(f, "*"),
+            Div => write!(f, "/"),
+            Mod => write!(f, "%"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum RelOp {
     LTH,
     LE,
@@ -176,4 +201,36 @@ pub enum RelOp {
     GE,
     EQU,
     NE,
+}
+
+impl fmt::Display for RelOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use RelOp::*;
+        match self {
+            LTH => write!(f, "<="),
+            LE => write!(f, "<"),
+            GTH => write!(f, ">="),
+            GE => write!(f, ">"),
+            EQU => write!(f, "=="),
+            NE => write!(f, "!="),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Operator {
+    RelOp(RelOp),
+    AddOp(AddOp),
+    MulOp(MulOp),
+}
+
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Operator::*;
+        match self {
+            RelOp(op) => write!(f, "{}", op),
+            AddOp(op) => write!(f, "{}", op),
+            MulOp(op) => write!(f, "{}", op),
+        }
+    }
 }

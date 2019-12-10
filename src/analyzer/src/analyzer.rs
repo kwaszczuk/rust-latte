@@ -242,29 +242,10 @@ impl SemanticAnalyzer {
                 Ret { ret_loc, value } => {
                     return true
                 },
-                Cond { expr, block } => {
-                    if let Some(true) = self.expr_is_true(&expr) {
-                        return self.analyse_function_returns(&block, true)
-                    }
-                },
                 CondElse { expr, block_true, block_false } => {
-                    if let Some(c) = self.expr_is_true(&expr) {
-                        if c == true {
-                            return self.analyse_function_returns(&block_true, true)
-                        } else {
-                            return self.analyse_function_returns(&block_false, true)
-                        }
-                    } else {
-                        let ret1 = self.analyse_function_returns(&block_true, false);
-                        let ret2 = self.analyse_function_returns(&block_false, false);
-                        if ret1 && ret2 {
-                            return true
-                        }
-                    }
-                },
-                While { expr, block } => {
-                    // TODO: check if in the infinite loop there's at least one return
-                    if let Some(true) = self.expr_is_true(&expr) {
+                    let ret1 = self.analyse_function_returns(&block_true, false);
+                    let ret2 = self.analyse_function_returns(&block_false, false);
+                    if ret1 && ret2 {
                         return true
                     }
                 },
@@ -279,17 +260,6 @@ impl SemanticAnalyzer {
             }));
         }
         return false
-    }
-
-    fn expr_is_true(&mut self, expr: &ast::Expr) -> Option<bool> {
-        use base::ast::ExprTypes::*;
-
-        match &expr.value {
-            ELitTrue => Some(true),
-            ELitFalse => Some(false),
-            ENot { expr } => None,
-            _ => None,
-        }
     }
 
     fn analyse_statement(&mut self, stmt: &ast::Stmt) {

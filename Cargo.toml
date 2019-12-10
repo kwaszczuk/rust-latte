@@ -16,3 +16,7 @@ members = ["src/base", "src/parser", "src/compiler", "src/parser/generate", "src
 [[bin]]
 name = "latc"
 path = "src/cli/src/main.rs"
+
+[[bin]]
+name = "latc_x86"
+path = "src/cli/src/main.rs"

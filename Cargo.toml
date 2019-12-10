@@ -7,11 +7,10 @@ edition = "2018"
 [dependencies]
 base = { path = "src/base" }
 parser = { path = "src/parser" }
-compiler = { path = "src/compiler" }
 analyzer = { path = "src/analyzer" }
 
 [workspace]
-members = ["src/base", "src/parser", "src/compiler", "src/parser/generate", "src/analyzer"]
+members = ["src/base", "src/parser", "src/parser/generate", "src/analyzer"]
 
 [[bin]]
 name = "latc"

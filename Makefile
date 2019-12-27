@@ -2,8 +2,8 @@
 all: x86 latc
 
 build_x86 build_latc:
-	# cargo build --release --bin $(BINARY_NAME) --all --exclude generate_parser
-	cargo build --release --bin $(BINARY_NAME) --message-format short --all --exclude generate_parser
+	cargo build --release --bin $(BINARY_NAME) --all --exclude generate_parser
+	# cargo build --release --bin $(BINARY_NAME) --message-format short --all --exclude generate_parser
 	cp target/release/$(BINARY_NAME) .
 
 parser:

@@ -186,11 +186,11 @@ impl fmt::Display for MulOp {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RelOp {
-    LTH,
+    LT,
     LE,
-    GTH,
+    GT,
     GE,
-    EQU,
+    EQ,
     NE,
 }
 
@@ -198,11 +198,11 @@ impl fmt::Display for RelOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use RelOp::*;
         match self {
-            LTH => write!(f, "<="),
+            LT => write!(f, "<="),
             LE => write!(f, "<"),
-            GTH => write!(f, ">="),
+            GT => write!(f, ">="),
             GE => write!(f, ">"),
-            EQU => write!(f, "=="),
+            EQ => write!(f, "=="),
             NE => write!(f, "!="),
         }
     }

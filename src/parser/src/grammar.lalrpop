@@ -555,12 +555,12 @@ pub MulOp: ast::Operator = {
 };
 
 pub RelOp: ast::Operator = {
-    "<"  => ast::Operator::RelOp(ast::RelOp::LTH), // LTH
-    "<=" => ast::Operator::RelOp(ast::RelOp::LE),  // LE
-    ">"  => ast::Operator::RelOp(ast::RelOp::GTH), // GTH
-    ">=" => ast::Operator::RelOp(ast::RelOp::GE),  // GE
-    "==" => ast::Operator::RelOp(ast::RelOp::EQU), // EQU
-    "!=" => ast::Operator::RelOp(ast::RelOp::NE),  // NE
+    "<"  => ast::Operator::RelOp(ast::RelOp::LT), // LT
+    "<=" => ast::Operator::RelOp(ast::RelOp::LE), // LE
+    ">"  => ast::Operator::RelOp(ast::RelOp::GT), // GT
+    ">=" => ast::Operator::RelOp(ast::RelOp::GE), // GE
+    "==" => ast::Operator::RelOp(ast::RelOp::EQ), // EQ
+    "!=" => ast::Operator::RelOp(ast::RelOp::NE), // NE
 };
 
 // ------------------- BASIC PARSING TYPES -------------------

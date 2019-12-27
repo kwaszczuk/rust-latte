@@ -1,0 +1,13 @@
+[package]
+name = "llvm"
+version = "0.1.0"
+authors = ["Karol Waszczuk <waszczukarol@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+base = { path = "../base" }
+parser = { path = "../parser" }
+
+[lib]
+name = "llvm"
+path = "src/lib.rs"

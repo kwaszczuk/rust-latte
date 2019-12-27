@@ -8,9 +8,10 @@ edition = "2018"
 base = { path = "src/base" }
 parser = { path = "src/parser" }
 analyzer = { path = "src/analyzer" }
+llvm = { path = "src/llvm" }
 
 [workspace]
-members = ["src/base", "src/parser", "src/parser/generate", "src/analyzer"]
+members = ["src/base", "src/parser", "src/parser/generate", "src/analyzer", "src/llvm"]
 
 [[bin]]
 name = "latc"

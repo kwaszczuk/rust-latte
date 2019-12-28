@@ -70,7 +70,7 @@ pub fn get_content_wo_comments(filename: &str) -> String {
 pub fn parse_file(filename: &str) -> Result<ast::Program, String> {
     let contents = get_content_wo_comments(filename);
     match grammar::ProgramParser::new().parse(contents.as_ref()) {
-        Err(err) => Err(format!("{:?}", err)),
+        Err(err) => Err(format!("{}", err)),
         Ok(tree) => Ok(tree)
     }
 }

@@ -156,7 +156,6 @@ impl LLVMCompiler {
                 SymbolTableEntity::new(
                     arg_ty.clone(),
                     arg_reg.clone(),
-                    
                 )
             );
             self.add_instr(LLVM::Instr::Alloc {
@@ -229,12 +228,15 @@ impl LLVMCompiler {
                             initial_value = LLVM::Type::default_value(&item_ty);
                         }
                     }
-                    self.add_instr(LLVM::Instr::Store {
-                        ty_src: item_ty.clone(),
-                        val_src: initial_value.clone(),
-                        ty_dest: LLVM::Type::Ptr(Box::new(item_ty.clone())),
-                        reg_dest: item_reg.clone()
-                    });
+
+                    if initial_value != LLVM::Value::Const(LLVM::Const::Null) {
+                        self.add_instr(LLVM::Instr::Store {
+                            ty_src: item_ty.clone(),
+                            val_src: initial_value.clone(),
+                            ty_dest: LLVM::Type::Ptr(Box::new(item_ty.clone())),
+                            reg_dest: item_reg.clone()
+                        });
+                    }
                 }
             },
 
@@ -567,7 +569,7 @@ impl LLVMCompiler {
                 }
             },
 
-            EString { value } => {
+            EString { value: _ } => {
                 // TODO: properly handle strings
                 (LLVM::Type::Int32, LLVM::Const::from(1).into())
             },

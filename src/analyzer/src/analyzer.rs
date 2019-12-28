@@ -10,6 +10,7 @@ use crate::errors::TypeError::*;
 use crate::errors::SemanticError::*;
 use crate::errors::{CompilerError, ErrorHandler, ErrorHandling};
 use crate::types::*;
+use crate::evaluation::{eval_bool_expr};
 
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable<SymbolTableEntity>,
@@ -120,8 +121,6 @@ impl SemanticAnalyzer {
     }
 
     fn analyse_program(&mut self, program: &ast::Program) {
-        self.symbol_table.begin_scope();
-
         let mut good_fns = vec![];
 
         for fn_def in &program.defs {
@@ -192,13 +191,11 @@ impl SemanticAnalyzer {
             self.current_function = Some((fn_def.ident.clone(), fn_ty.clone()));
             self.analyse_block(&fn_def.block);
             if fn_ty.ret != SimpleType::Void {
-                self.analyse_function_returns(&fn_def.block, true);
+                self.analyse_function_returns(&fn_def.block, true, true);
             }
             self.current_function = None;
             self.symbol_table.end_scope();
         }
-
-        self.symbol_table.end_scope();
     }
 
     fn analyse_function_definition(&mut self, fn_def: &ast::FnDef) {
@@ -233,7 +230,9 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn analyse_function_returns(&mut self, block: &ast::Block, should_throw: bool) -> bool {
+    // @should_throw: should error be thrown (recorded) if analyzed block is missing return
+    // @check_all_branches: whether we want to know if all block branches have returns
+    fn analyse_function_returns(&mut self, block: &ast::Block, should_throw: bool, check_all_branches: bool) -> bool {
         use base::ast::StmtTypes::*;
         let (fn_name, _) = self.current_function.clone().unwrap();
 
@@ -242,11 +241,48 @@ impl SemanticAnalyzer {
                 Ret { ret_loc, value } => {
                     return true
                 },
+                While { expr, block } => {
+                    let expr_val = eval_bool_expr(&expr);
+                    if let Some(true) = expr_val {
+                        return self.analyse_function_returns(&block, true, false)
+                    }
+                },
+                Cond { expr, block } => {
+                    let expr_val = eval_bool_expr(&expr);
+                    if let Some(true) = expr_val {
+                        if self.analyse_function_returns(&block, false, check_all_branches) {
+                            return true
+                        }
+                    }
+                },
                 CondElse { expr, block_true, block_false } => {
-                    let ret1 = self.analyse_function_returns(&block_true, false);
-                    let ret2 = self.analyse_function_returns(&block_false, false);
-                    if ret1 && ret2 {
-                        return true
+                    match eval_bool_expr(&expr) {
+                        Some(true) => {
+                        let ret1 = self.analyse_function_returns(&block_true, false, check_all_branches);
+                        if ret1 {
+                                return true
+                            }
+                        },
+                        Some(false) => {
+                            let ret2 = self.analyse_function_returns(&block_false, false, check_all_branches);
+                            if ret2 {
+                                return true
+                            }
+                        },
+                        None => {
+                            let ret1 = self.analyse_function_returns(&block_true, false, check_all_branches);
+                            let ret2 = self.analyse_function_returns(&block_false, false, check_all_branches);
+
+                            // if we are checking all branches for returns, then if both if else
+                            // branches have returns then rest of the program is unreachable
+                            //
+                            // if we are not checking all branches then return in just a single
+                            // branch is sufficient
+                            if (check_all_branches && ret1 && ret2) ||
+                               (!check_all_branches && (ret1 || ret2)) {
+                                return true
+                            }
+                        }
                     }
                 },
                 _ => {},

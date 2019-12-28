@@ -6,6 +6,7 @@ pub use crate::errors::{prettyprint_errors};
 mod errors;
 mod analyzer;
 mod types;
+mod evaluation;
 
 pub fn run(program: &ast::Program) -> Option<Vec<CompilerError>> {
     match analyzer::SemanticAnalyzer::run(program) {

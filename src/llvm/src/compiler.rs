@@ -306,17 +306,10 @@ impl LLVMCompiler {
 
             Decl { ty, ty_loc: _, items } => {
                 for item in items {
-                    // add variable to the scope
                     let item_reg = self.next_register();
                     let item_ty = LLVM::Type::from(ty.clone());
-                    self.symbol_table.insert(
-                        item.ident.clone(),
-                        SymbolTableEntity::new(
-                            item_ty.clone(),
-                            item_reg.clone()
-                        )
-                    );
-                    // allocate it
+
+                    // allocate variable it
                     self.add_instr(LLVM::Instr::Alloc {
                         dest: (item_ty.clone(), item_reg.clone())
                     });
@@ -339,6 +332,15 @@ impl LLVMCompiler {
                             dest: (LLVM::Type::new_ptr(item_ty.clone()), item_reg.clone())
                         });
                     }
+
+                    // add variable to the scope, after all calculations (important!)
+                    self.symbol_table.insert(
+                        item.ident.clone(),
+                        SymbolTableEntity::new(
+                            item_ty.clone(),
+                            item_reg.clone()
+                        )
+                    );
                 }
             },
 

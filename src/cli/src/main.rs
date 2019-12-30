@@ -43,7 +43,8 @@ fn main() {
 
     let ast_tree = parser::parse_file(filename)
         .unwrap_or_else(|e| {
-            eprintln!("Parsing error:\n{}", e);
+            eprintln!("ERROR");
+            eprintln!("Parsing error: {}", e);
             process::exit(1)
         });
 

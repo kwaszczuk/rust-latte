@@ -2,6 +2,7 @@ use crate::instructions as LLVM;
 use crate::operators::{Operator, ArithmOp, RelOp};
 use base::ast;
 use base::symbol_table::{SymbolTable};
+use crate::utils::{length_after_escape, instructions_to_blocks};
 
 use std::panic;
 
@@ -48,7 +49,9 @@ pub struct LLVMCompiler {
     symbol_table: SymbolTable<SymbolTableEntity>,
     _label_generator: Labeler,
     _register_generator: Labeler,
+    _static_generator: Labeler,
     _instrs: Vec<LLVM::Instr>,
+    _statics: Vec<(LLVM::Static, String)>,
     _current_block_label: LLVM::Label,
 }
 
@@ -58,7 +61,9 @@ impl LLVMCompiler {
             symbol_table: SymbolTable::new(),
             _label_generator: Labeler::new("l_".to_string()),
             _register_generator: Labeler::new("v_".to_string()),
+            _static_generator: Labeler::new("static_".to_string()),
             _instrs: vec![],
+            _statics: vec![],
             _current_block_label: LLVM::Label { name: "".to_string() },
         }
     }
@@ -73,6 +78,11 @@ impl LLVMCompiler {
         LLVM::Register { name }
     }
 
+    fn next_static(&mut self) -> LLVM::Static {
+        let name = self._static_generator.next();
+        LLVM::Static { name }
+    }
+
     fn clean_instrs(&mut self) {
         self._instrs = vec![];
     }
@@ -83,13 +93,94 @@ impl LLVMCompiler {
     }
 
     fn add_instr(&mut self, instr: LLVM::Instr) {
-        self._instrs.push(instr.clone());
-        match instr {
-            LLVM::Instr::Label { val, preds: _ } => {
-                self._current_block_label = val.clone();
-            },
-            _ => {}
+        if let LLVM::Instr::Label { val, preds } = &instr {
+            // when starting new block, make sure it won't be empty by
+            // putting `unreachable` instruction
+            self._instrs.push(instr.clone());
+            self._instrs.push(LLVM::Instr::Unreachable);
+            self._current_block_label = val.clone();
+        } else {
+            // remove `unreachable` instruction if block won't be empty
+            if let Some(LLVM::Instr::Unreachable) = self._instrs.last() {
+                self._instrs.pop();
+            }
+            self._instrs.push(instr.clone());
         }
+    }
+
+    fn add_static(&mut self, st: LLVM::Static, val: String) {
+        self._statics.push((st, val));
+    }
+
+    fn get_statics(&mut self) -> Vec<(LLVM::Static, String)> {
+        let statics = self._statics.to_vec();
+        statics
+    }
+
+    fn get_globals(&mut self) -> Vec<LLVM::Function> {
+        vec![
+            LLVM::Function {
+                ret_ty: LLVM::Type::Void,
+                name: "printString".into(),
+                args: vec![
+                    LLVM::Type::new_ptr(LLVM::Type::Int8),
+                ],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::Void,
+                name: "printInt".into(),
+                args: vec![
+                    LLVM::Type::Int32,
+                ],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::Void,
+                name: "error".into(),
+                args: vec![],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::Int32,
+                name: "readInt".into(),
+                args: vec![],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::new_ptr(LLVM::Type::Int8),
+                name: "readString".into(),
+                args: vec![],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::Int1,
+                name: "streq".into(),
+                args: vec![
+                    LLVM::Type::new_ptr(LLVM::Type::Int8),
+                    LLVM::Type::new_ptr(LLVM::Type::Int8),
+                ],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::Int1,
+                name: "strne".into(),
+                args: vec![
+                    LLVM::Type::new_ptr(LLVM::Type::Int8),
+                    LLVM::Type::new_ptr(LLVM::Type::Int8),
+                ],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::new_ptr(LLVM::Type::Int8),
+                name: "concat".into(),
+                args: vec![
+                    LLVM::Type::new_ptr(LLVM::Type::Int8),
+                    LLVM::Type::new_ptr(LLVM::Type::Int8),
+                ],
+                body: vec![],
+            },
+        ]
     }
 
     pub fn run(ast_tree: &ast::Program) -> LLVM::Program {
@@ -106,11 +197,11 @@ impl LLVMCompiler {
             ("readString",  LLVM::Type::Ptr(Box::new(LLVM::Type::Int8))),
         ];
 
-        for (fn_name, fn_ret_ty) in &global_fns {
+        for f in &self.get_globals() {
             self.symbol_table.insert(
-                fn_name.to_string(),
+                f.name.to_string(),
                 SymbolTableEntity::new(
-                    LLVM::Type::Fun { ret_ty: Box::new(fn_ret_ty.clone()) },
+                    LLVM::Type::Fun { ret_ty: Box::new(f.ret_ty.clone()) },
                     LLVM::Register { name: "".to_string() }
                 ),
             );
@@ -138,6 +229,8 @@ impl LLVMCompiler {
             functions.push(self.compile_function(&fn_def));
         }
         LLVM::Program {
+            declares: self.get_globals(),
+            statics: self.get_statics(),
             functions: functions,
         }
     }
@@ -148,43 +241,57 @@ impl LLVMCompiler {
         self._register_generator.reset();
         self.clean_instrs();
 
+        let fn_ret_ty = LLVM::Type::from(&fn_def.ty);
         for (i, a) in fn_def.args.iter().enumerate() {
-            let arg_reg = self.next_register();
+            let arg_reg = LLVM::Register { name: format!("{}", i) };
+            let new_reg = self.next_register();
             let arg_ty = LLVM::Type::from(&a.ty);
             self.symbol_table.insert(
                 a.ident.clone(),
                 SymbolTableEntity::new(
                     arg_ty.clone(),
-                    arg_reg.clone(),
+                    new_reg.clone(),
                 )
             );
             self.add_instr(LLVM::Instr::Alloc {
-                reg_dest: arg_reg.clone(),
-                ty: arg_ty.clone(),
+                dest: (arg_ty.clone(), new_reg.clone()),
             });
             self.add_instr(LLVM::Instr::Store {
-                ty_src: arg_ty.clone(),
-                val_src: (LLVM::Register { name: format!("{}", i) }).into(),
-                ty_dest: LLVM::Type::Ptr(Box::new(arg_ty.clone())),
-                reg_dest: arg_reg.clone()
+                dest: (LLVM::Type::new_ptr(arg_ty.clone()), new_reg.clone()),
+                src: (arg_ty.clone(), arg_reg.into()),
             });
         }
 
+        let starting_label = self.next_label();
+        self.add_instr(LLVM::Branch::Direct { label: starting_label.clone() }.into());
+        self.add_instr(starting_label.clone().into());
         self.compile_block(&fn_def.block);
+
+        // void function may not have an explicit return at the end
+        if let LLVM::Type::Void = fn_ret_ty {
+            if let Some(LLVM::Instr::ReturnVoid) = self._instrs.last() {
+            } else {
+                self.add_instr(LLVM::Instr::ReturnVoid);
+            }
+        }
+
         self.symbol_table.end_scope();
 
+
         LLVM::Function {
-            ret_ty: LLVM::Type::from(&fn_def.ty),
+            ret_ty: fn_ret_ty,
             name: fn_def.ident.clone(),
             args: fn_def.args.iter().map(|a| LLVM::Type::from(&a.ty)).collect(),
-            body: self.get_instrs(),
+            body: instructions_to_blocks(self.get_instrs()),
         }
     }
 
     fn compile_block(&mut self, block: &ast::Block) {
+        self.symbol_table.begin_scope();
         for stmt in &block.stmts {
             self.compile_statement(&stmt);
         }
+        self.symbol_table.end_scope();
     }
 
     fn compile_statement(&mut self, stmt: &ast::Stmt) {
@@ -194,9 +301,7 @@ impl LLVMCompiler {
             Empty => {},
 
             BStmt { block } => {
-                self.symbol_table.begin_scope();
                 self.compile_block(&block);
-                self.symbol_table.end_scope();
             },
 
             Decl { ty, ty_loc: _, items } => {
@@ -213,8 +318,7 @@ impl LLVMCompiler {
                     );
                     // allocate it
                     self.add_instr(LLVM::Instr::Alloc {
-                        reg_dest: item_reg.clone(),
-                        ty: item_ty.clone(),
+                        dest: (item_ty.clone(), item_reg.clone())
                     });
 
                     // calculate and assign variable initial value if needed
@@ -231,10 +335,8 @@ impl LLVMCompiler {
 
                     if initial_value != LLVM::Value::Const(LLVM::Const::Null) {
                         self.add_instr(LLVM::Instr::Store {
-                            ty_src: item_ty.clone(),
-                            val_src: initial_value.clone(),
-                            ty_dest: LLVM::Type::Ptr(Box::new(item_ty.clone())),
-                            reg_dest: item_reg.clone()
+                            src: (item_ty.clone(), initial_value.clone()),
+                            dest: (LLVM::Type::new_ptr(item_ty.clone()), item_reg.clone())
                         });
                     }
                 }
@@ -244,10 +346,8 @@ impl LLVMCompiler {
                 let var = self.symbol_table.get(&ident).unwrap();
                 let (expr_ty, expr_val) = self.compile_expression(&expr);
                 self.add_instr(LLVM::Instr::Store {
-                    ty_src: expr_ty.clone(),
-                    val_src: expr_val.clone(),
-                    ty_dest: LLVM::Type::Ptr(Box::new(var.ty.clone())),
-                    reg_dest: var.reg.clone()
+                    src: (expr_ty.clone(), expr_val.clone()),
+                    dest: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
                 });
             },
 
@@ -288,6 +388,10 @@ impl LLVMCompiler {
 
                 self.add_instr(true_block_label.into());
                 self.compile_block(&block);
+                self.add_instr(LLVM::Branch::Direct {
+                    label: continue_block_label.clone(),
+                }.into());
+
                 self.add_instr(continue_block_label.into());
             },
 
@@ -306,8 +410,16 @@ impl LLVMCompiler {
 
                 self.add_instr(true_block_label.into());
                 self.compile_block(&block_true);
+                self.add_instr(LLVM::Branch::Direct {
+                    label: continue_block_label.clone(),
+                }.into());
+
                 self.add_instr(false_block_label.into());
                 self.compile_block(&block_false);
+                self.add_instr(LLVM::Branch::Direct {
+                    label: continue_block_label.clone(),
+                }.into());
+
                 self.add_instr(continue_block_label.into());
             },
 
@@ -348,26 +460,21 @@ impl LLVMCompiler {
         let var = self.symbol_table.get(&ident).unwrap();
         let load_reg = self.next_register();
         self.add_instr(LLVM::Instr::Load {
-            ty_dest: var.ty.clone(),
-            reg_dest: load_reg.clone(),
-            ty_src: LLVM::Type::Ptr(Box::new(var.ty.clone())),
-            reg_src: var.reg.clone()
+            dest: (var.ty.clone(), load_reg.clone()),
+            src: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
         });
 
         let incr_reg = self.next_register();
         self.add_instr(LLVM::Instr::Arithm {
-            reg_dest: incr_reg.clone(),
+            dest: (var.ty.clone(), incr_reg.clone()),
             op: op.into(),
-            ty: var.ty.clone(),
             val_lhs: load_reg.into(),
             val_rhs: LLVM::Const::from(1).into()
         });
 
         self.add_instr(LLVM::Instr::Store {
-            ty_src: var.ty.clone(),
-            val_src: incr_reg.into(),
-            ty_dest: LLVM::Type::Ptr(Box::new(var.ty.clone())),
-            reg_dest: var.reg.clone()
+            src: (var.ty.clone(), incr_reg.into()),
+            dest: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
         });
     }
 
@@ -376,16 +483,18 @@ impl LLVMCompiler {
         match &expr.value {
 
             EOr { expr1, expr2 } => {
-                let (_ty1, val1) = self.compile_expression(&expr1);
-                let current_block_label = self._current_block_label.clone();
-                let expr2_block_label = self.next_label();
+                let (ty1, val1) = self.compile_expression(&expr1);
+                assert_eq!(ty1, LLVM::Type::Int1);
+
+                let expr1_block_label = self._current_block_label.clone();
+                let mut expr2_block_label = self.next_label();
                 let continue_block_label = self.next_label();
 
                 let cmp_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Compare {
-                    reg_dest: cmp_reg.clone(),
+                    dest_reg: cmp_reg.clone(),
                     op: RelOp::EQ.into(),
-                    ty: LLVM::Type::Int1,
+                    ty: ty1.clone(),
                     val_lhs: val1,
                     val_rhs: LLVM::Const::True.into(),
                 });
@@ -397,7 +506,10 @@ impl LLVMCompiler {
                 }.into());
 
                 self.add_instr(expr2_block_label.clone().into());
-                let (_ty2, val2) = self.compile_expression(&expr2);
+                let (ty2, val2) = self.compile_expression(&expr2);
+                assert_eq!(ty2, LLVM::Type::Int1);
+                // we need to update label as expr2 might be calcualted using multiple blocks
+                expr2_block_label = self._current_block_label.clone();
                 self.add_instr(LLVM::Branch::Direct {
                     label: continue_block_label.clone(),
                 }.into());
@@ -405,28 +517,29 @@ impl LLVMCompiler {
                 self.add_instr(continue_block_label.into());
                 let ret_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Phi {
-                    reg_dest: ret_reg.clone(),
-                    ty: LLVM::Type::Int1,
-                    val1: LLVM::Const::True.into(),
-                    label1: current_block_label,
-                    val2: val2.clone(),
-                    label2: expr2_block_label.clone(),
+                    dest: (LLVM::Type::Int1, ret_reg.clone()),
+                    preds: vec![
+                        (LLVM::Const::True.into(), expr1_block_label),
+                        (val2.clone(), expr2_block_label.clone()),
+                    ],
                 });
 
                 (LLVM::Type::Int1, ret_reg.clone().into())
             },
 
             EAnd { expr1, expr2 } => {
-                let (_ty1, val1) = self.compile_expression(&expr1);
-                let current_block_label = self._current_block_label.clone();
-                let expr2_block_label = self.next_label();
+                let (ty1, val1) = self.compile_expression(&expr1);
+                assert_eq!(ty1, LLVM::Type::Int1);
+
+                let expr1_block_label = self._current_block_label.clone();
+                let mut expr2_block_label = self.next_label();
                 let continue_block_label = self.next_label();
 
                 let cmp_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Compare {
-                    reg_dest: cmp_reg.clone(),
+                    dest_reg: cmp_reg.clone(),
                     op: RelOp::EQ.into(),
-                    ty: LLVM::Type::Int1,
+                    ty: ty1.clone(),
                     val_lhs: val1,
                     val_rhs: LLVM::Const::False.into(),
                 });
@@ -438,7 +551,10 @@ impl LLVMCompiler {
                 }.into());
 
                 self.add_instr(expr2_block_label.clone().into());
-                let (_ty2, val2) = self.compile_expression(&expr2);
+                let (ty2, val2) = self.compile_expression(&expr2);
+                assert_eq!(ty2, LLVM::Type::Int1);
+                // we need to update label as expr2 might be calcualted using multiple blocks
+                expr2_block_label = self._current_block_label.clone();
                 self.add_instr(LLVM::Branch::Direct {
                     label: continue_block_label.clone(),
                 }.into());
@@ -446,12 +562,11 @@ impl LLVMCompiler {
                 self.add_instr(continue_block_label.into());
                 let ret_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Phi {
-                    reg_dest: ret_reg.clone(),
-                    ty: LLVM::Type::Int1,
-                    val1: LLVM::Const::False.into(),
-                    label1: current_block_label,
-                    val2: val2.clone(),
-                    label2: expr2_block_label.clone(),
+                    dest: (LLVM::Type::Int1, ret_reg.clone()),
+                    preds: vec![
+                        (LLVM::Const::False.into(), expr1_block_label),
+                        (val2.clone(), expr2_block_label.clone()),
+                    ],
                 });
 
                 (LLVM::Type::Int1, ret_reg.clone().into())
@@ -459,71 +574,128 @@ impl LLVMCompiler {
 
             ERel { op, op_loc: _, expr1, expr2 } => {
                 let (ty1, val1) = self.compile_expression(&expr1);
-                let (_ty2, val2) = self.compile_expression(&expr2);
+                let (ty2, val2) = self.compile_expression(&expr2);
+                assert_eq!(ty1, ty2);
 
                 let ret_reg = self.next_register();
-                self.add_instr(LLVM::Instr::Compare {
-                    reg_dest: ret_reg.clone(),
-                    op: Operator::from(op.clone()),
-                    ty: ty1,
-                    val_lhs: val1,
-                    val_rhs: val2,
-                });
+
+                match ty1.clone() {
+                    LLVM::Type::Ptr(ty) => {
+                        assert_eq!(*ty, LLVM::Type::Int8);
+                        assert!(
+                            *op == ast::Operator::RelOp(ast::RelOp::EQ)
+                         || *op == ast::Operator::RelOp(ast::RelOp::NE),
+                         "string supports only == and != relation operators");
+
+                        let fn_name =  match *op {
+                            ast::Operator::RelOp(ast::RelOp::EQ) => "streq",
+                            ast::Operator::RelOp(ast::RelOp::NE) => "strne",
+                            _ => { panic!("should not happen") },
+                        };
+
+                        self.add_instr(LLVM::Instr::Call {
+                            reg_dest: Some(ret_reg.clone()),
+                            ret_ty: LLVM::Type::Int1,
+                            name: fn_name.to_string(),
+                            args: vec![
+                                (ty1.clone(), val1.clone()),
+                                (ty2.clone(), val2.clone())
+                            ],
+                        });
+                    },
+
+                    _ => {
+                        self.add_instr(LLVM::Instr::Compare {
+                            dest_reg: ret_reg.clone(),
+                            op: Operator::from(op.clone()),
+                            ty: ty1.clone(),
+                            val_lhs: val1,
+                            val_rhs: val2,
+                        });
+                    },
+                }
                 (LLVM::Type::Int1, ret_reg.clone().into())
             },
 
             EAdd { op, op_loc: _, expr1, expr2 } |
             EMul { op, op_loc: _, expr1, expr2 } => {
                 let (ty1, val1) = self.compile_expression(&expr1);
-                let (_ty2, val2) = self.compile_expression(&expr2);
+                let (ty2, val2) = self.compile_expression(&expr2);
+                assert_eq!(ty1, ty2);
 
                 let ret_reg = self.next_register();
-                self.add_instr(LLVM::Instr::Arithm {
-                    reg_dest: ret_reg.clone(),
-                    op: Operator::from(op.clone()),
-                    ty: ty1,
-                    val_lhs: val1,
-                    val_rhs: val2,
-                });
-                (LLVM::Type::Int32, ret_reg.clone().into())
+
+                match ty1.clone() {
+                    LLVM::Type::Ptr(ty) => {
+                        assert_eq!(*ty, LLVM::Type::Int8);
+                        assert!(
+                            *op == ast::Operator::ArithmOp(ast::ArithmOp::Plus),
+                         "string supports only + arithmetic operators");
+
+                        let fn_name =  match *op {
+                            ast::Operator::ArithmOp(ast::ArithmOp::Plus) => "concat",
+                            _ => { panic!("should not happen") },
+                        };
+
+                        self.add_instr(LLVM::Instr::Call {
+                            reg_dest: Some(ret_reg.clone()),
+                            ret_ty: ty1.clone(),
+                            name: fn_name.to_string(),
+                            args: vec![
+                                (ty1.clone(), val1.clone()),
+                                (ty2.clone(), val2.clone())
+                            ],
+                        });
+                    },
+
+                    _ => {
+                        self.add_instr(LLVM::Instr::Arithm {
+                            dest: (ty1.clone(), ret_reg.clone()),
+                            op: Operator::from(op.clone()),
+                            val_lhs: val1,
+                            val_rhs: val2,
+                        });
+                    }
+                }
+                (ty1.clone(), ret_reg.clone().into())
             },
 
             ENeg { expr } => {
                 let (ty, val) = self.compile_expression(&expr);
+                assert_eq!(ty, LLVM::Type::Int32);
 
                 let ret_reg = self.next_register();
-                self.add_instr(LLVM::Instr::Compare {
-                    reg_dest: ret_reg.clone(),
+
+                self.add_instr(LLVM::Instr::Arithm {
+                    dest: (LLVM::Type::Int32, ret_reg.clone()),
                     op: ArithmOp::Sub.into(),
-                    ty: ty.clone(),
                     val_lhs: LLVM::Const::from(0).into(),
                     val_rhs: val,
                 });
-                (ty.clone(), ret_reg.clone().into())
+                (LLVM::Type::Int32, ret_reg.clone().into())
             },
 
             ENot { expr } => {
                 let (ty, val) = self.compile_expression(&expr);
+                assert_eq!(ty, LLVM::Type::Int1);
 
                 let ret_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Compare {
-                    reg_dest: ret_reg.clone(),
+                    dest_reg: ret_reg.clone(),
                     op: RelOp::EQ.into(),
                     ty: ty.clone(),
                     val_lhs: val,
                     val_rhs: LLVM::Const::False.into(),
                 });
-                (ty.clone(), ret_reg.clone().into())
+                (LLVM::Type::Int1, ret_reg.clone().into())
             },
 
             EVar { ident, ident_loc: _ } => {
                 let var = self.symbol_table.get(&ident).unwrap();
                 let load_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Load {
-                    ty_dest: var.ty.clone(),
-                    reg_dest: load_reg.clone(),
-                    ty_src: LLVM::Type::Ptr(Box::new(var.ty.clone())),
-                    reg_src: var.reg.clone()
+                    dest: (var.ty.clone(), load_reg.clone()),
+                    src: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone()),
                 });
 
                 (var.ty.clone(), load_reg.clone().into())
@@ -569,9 +741,24 @@ impl LLVMCompiler {
                 }
             },
 
-            EString { value: _ } => {
+            EString { value } => {
                 // TODO: properly handle strings
-                (LLVM::Type::Int32, LLVM::Const::from(1).into())
+                let str_reg = self.next_static();
+                self.add_static(str_reg.clone(), value.clone());
+
+                let ret_reg = self.next_register();
+                let arr = LLVM::Type::new_array(
+                    LLVM::Type::Int8,
+                    length_after_escape(value.clone())
+                );
+                self.add_instr(LLVM::Instr::GetElementPtr {
+                    dest: (arr.clone(), ret_reg.clone()),
+                    src: (LLVM::Type::new_ptr(arr.clone()), str_reg.into()),
+                    idx1: (LLVM::Type::Int32, LLVM::Const::from(0).into()),
+                    idx2: (LLVM::Type::Int32, LLVM::Const::from(0).into()),
+                });
+
+                (LLVM::Type::new_ptr(LLVM::Type::Int8), ret_reg.into())
             },
         }
     }

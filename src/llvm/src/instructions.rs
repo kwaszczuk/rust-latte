@@ -1,6 +1,7 @@
 use std::fmt;
 // use std::collections::{LinkedList};
 use crate::operators::{Operator};
+use crate::utils::{escape_string, length_after_escape};
 use base::ast;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -26,11 +27,26 @@ impl fmt::Display for Label {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct Static {
+    pub name: String,
+}
+
+impl fmt::Display for Static {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "@{}", self.name)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Int32,
     Int8,
     Int1,
     Ptr(Box<Type>),
+    Array {
+        ty: Box<Type>,
+        len: usize,
+    },
     Void,
     Fun {
         ret_ty: Box<Type>,
@@ -51,7 +67,18 @@ impl Type {
             Fun { ret_ty: _ } => {
                 panic!("no default value for fun type");
             },
+            Array { ty: _, len: _ } => {
+                panic!("no default value for array type");
+            },
         }
+    }
+
+    pub fn new_ptr(ty: Type) -> Type {
+        Type::Ptr(Box::new(ty))
+    }
+
+    pub fn new_array(ty: Type, len: usize) -> Type {
+        Type::Array { ty: Box::new(ty), len }
     }
 }
 
@@ -85,6 +112,7 @@ impl fmt::Display for Type {
             Fun { ret_ty: _ } => {
                 panic!("no display implementation for fun type")
             },
+            Array { ty, len } => write!(f, "[ {} x {} ]", len, ty),
         }
     }
 }
@@ -123,17 +151,24 @@ impl fmt::Display for Const {
 pub enum Value {
     Const(Const),
     Register(Register),
+    Static(Static),
+}
+
+impl From<Static> for Value {
+    fn from(s: Static) -> Self {
+        Value::Static(s)
+    }
 }
 
 impl From<Register> for Value {
     fn from(r: Register) -> Self {
-        Value::Register(r.clone())
+        Value::Register(r)
     }
 }
 
 impl From<Const> for Value {
     fn from(c: Const) -> Self {
-        Value::Const(c.clone())
+        Value::Const(c)
     }
 }
 
@@ -143,6 +178,7 @@ impl fmt::Display for Value {
         match self {
             Const(c) => write!(f, "{}", c),
             Register(r) => write!(f, "{}", r),
+            Static(s) => write!(f, "{}", s),
         }
     }
 }
@@ -181,23 +217,18 @@ pub enum Instr {
         preds: Vec<Label>,
     },
     Load {
-        ty_dest: Type,
-        reg_dest: Register,
-        ty_src: Type,
-        reg_src: Register,
+        dest: (Type, Register),
+        src: (Type, Register),
     },
     Store {
-        ty_src: Type,
-        val_src: Value,
-        ty_dest: Type,
-        reg_dest: Register,
+        src: (Type, Value),
+        dest: (Type, Register),
     },
     Alloc {
-        reg_dest: Register,
-        ty: Type,
+        dest: (Type, Register),
     },
     Compare {
-        reg_dest: Register,
+        dest_reg: Register,
         op: Operator,
         ty: Type,
         val_lhs: Value,
@@ -211,25 +242,27 @@ pub enum Instr {
     },
     Branch(Branch),
     Arithm {
-        reg_dest: Register,
+        dest: (Type, Register),
         op: Operator,
-        ty: Type,
         val_lhs: Value,
         val_rhs: Value,
     },
     Phi {
-        reg_dest: Register,
-        ty: Type,
-        val1: Value,
-        label1: Label,
-        val2: Value,
-        label2: Label,
+        dest: (Type, Register),
+        preds: Vec<(Value, Label)>
+    },
+    GetElementPtr {
+        dest: (Type, Register),
+        src: (Type, Value),
+        idx1: (Type, Value),
+        idx2: (Type, Value),
     },
     Return {
         ty: Type,
         val: Value,
     },
-    ReturnVoid
+    ReturnVoid,
+    Unreachable
 }
 
 impl From<Branch> for Instr {
@@ -252,21 +285,21 @@ impl fmt::Display for Instr {
         use Instr::*;
         match self {
             Label { val, preds: _ } => write!(f, "{}:", val.name),
-            Load { ty_dest, reg_dest, ty_src, reg_src } => write!(
+            Load { src, dest } => write!(
                 f, "{} = load {}, {} {}",
-                reg_dest, ty_dest, ty_src, reg_src
+                dest.1, dest.0, src.0, src.1
             ),
-            Store { ty_src, val_src, ty_dest, reg_dest } => write!(
+            Store { src, dest } => write!(
                 f, "store {} {}, {} {}",
-                ty_src, val_src, ty_dest, reg_dest
+                src.0, src.1, dest.0, dest.1
             ),
-            Alloc { reg_dest, ty } => write!(
+            Alloc { dest } => write!(
                 f, "{} = alloca {}",
-                reg_dest, ty
+                dest.1, dest.0
             ),
-            Compare { reg_dest, op, ty, val_lhs, val_rhs } => write!(
+            Compare { dest_reg, op, ty, val_lhs, val_rhs } => write!(
                 f, "{} = icmp {} {} {}, {}",
-                reg_dest, op, ty, val_lhs, val_rhs
+                dest_reg, op, ty, val_lhs, val_rhs
             ),
             Call { reg_dest, ret_ty, name, args } => {
                 let args_vec: Vec<String> = args.iter()
@@ -279,16 +312,47 @@ impl fmt::Display for Instr {
                 }
             },
             Branch(b) => write!(f, "{}", b),
-            Arithm { reg_dest, op, ty, val_lhs, val_rhs } => write!(
+            Arithm { dest, op, val_lhs, val_rhs } => write!(
                 f, "{} = {} {} {}, {}",
-                reg_dest, op, ty, val_lhs, val_rhs
+                dest.1, op, dest.0, val_lhs, val_rhs
             ),
-            Phi { reg_dest, ty, val1, label1, val2, label2 } => write!(
-                f, "{} = phi {} [ {}, {} ],  [ {}, {} ]",
-                reg_dest, ty, val1, label1, val2, label2
-            ),
+            Phi { dest, preds } => {
+                let preds_str: Vec<String> = preds
+                    .iter()
+                    .map(|(val, lab)| format!("[ {}, {} ]", val, lab))
+                    .collect();
+                write!(
+                    f, "{} = phi {} {}",
+                    dest.1, dest.0, preds_str.join(", ")
+                )
+            },
+            GetElementPtr { dest, src, idx1, idx2 } => {
+                write!(
+                    f, "{} = getelementptr {}, {} {}, {} {}, {} {}",
+                    dest.1, dest.0, src.0, src.1, idx1.0, idx1.1, idx2.0, idx2.1
+                )
+            },
             Return { ty, val } => write!(f, "ret {} {}", ty, val),
             ReturnVoid => write!(f, "ret void"),
+            Unreachable => write!(f, "unreachable"),
+        }
+    }
+}
+
+pub struct Block {
+    pub label: Option<Label>,
+    pub instrs: Vec<Instr>,
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let instrs_strs: Vec<String> = self.instrs
+            .iter()
+            .map(|i| "\t".to_owned() + &i.to_string())
+            .collect();
+        match &self.label {
+            Some(l) => write!(f, "{}:\n{}", l.name, instrs_strs.join("\n")),
+            None => write!(f, "{}", instrs_strs.join("\n")),
         }
     }
 }
@@ -297,7 +361,7 @@ pub struct Function {
     pub ret_ty: Type,
     pub name: String,
     pub args: Vec<Type>,
-    pub body: Vec<Instr>
+    pub body: Vec<Block>
 }
 
 impl fmt::Display for Function {
@@ -310,15 +374,7 @@ impl fmt::Display for Function {
         let fun_template_end = vec![
             format!("}}")
         ];
-        let body_strs: Vec<String> = self.body
-            .iter()
-            .map(|instr| {
-                match instr {
-                    Instr::Label { val: _, preds: _ } => "\n".to_owned() + &instr.to_string(),
-                    _ => "\t".to_owned() + &instr.to_string(),
-                }
-            })
-            .collect();
+        let body_strs: Vec<String> = self.body.iter().map(|b| b.to_string()).collect();
 
         let mut code = vec![];
         code.extend(fun_template_begin);
@@ -328,15 +384,38 @@ impl fmt::Display for Function {
     }
 }
 
-
 pub struct Program {
+    pub declares: Vec<Function>,
+    pub statics: Vec<(Static, String)>,
     pub functions: Vec<Function>,
 }
 
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let code: Vec<String> = self.functions.iter().map(|f| format!("{}", f)).collect();
-        let code_str = code.join("\n\n");
-        write!(f, "{}", code_str)
+        let declares: Vec<String> = self.declares.iter().map(|f| {
+            let args: Vec<String> = f.args.iter().map(|a| a.to_string()).collect();
+            let args_str = args.join(", ");
+            format!(
+                "declare {} @{}({})",
+                f.ret_ty, f.name, args_str
+            )
+        }).collect();
+
+        let statics: Vec<String> = self.statics.iter().map(|(static_, str_)| {
+            let escaped_str = escape_string(str_.clone());
+            let ty = Type::new_array(Type::Int8, length_after_escape(str_.clone()));
+            format!(
+                "{} = constant {} c\"{}\", align 1 ",
+                static_, ty, escaped_str
+            )
+        }).collect();
+
+        let functions: Vec<String> = self.functions.iter().map(|f| format!("{}", f)).collect();
+        write!(
+            f, "{}\n\n{}\n\n{}",
+            declares.join("\n"),
+            statics.join("\n"),
+            functions.join("\n\n"),
+        )
     }
 }

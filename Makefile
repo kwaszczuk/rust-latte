@@ -17,8 +17,8 @@ x86: BINARY_NAME=latc_x86
 x86: build_x86
 
 .PHONY: llvm
-latc: BINARY_NAME=latc_llvm
-latc: build_llvm
+llvm: BINARY_NAME=latc_llvm
+llvm: build_llvm
 
 .PHONY: latc
 latc: BINARY_NAME=latc

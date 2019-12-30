@@ -37,14 +37,12 @@ impl From<ast::Operator> for Operator {
                 ast::RelOp::LT => RelOp::LT.into(),
                 ast::RelOp::LE => RelOp::LE.into(),
             },
-            ast::Operator::AddOp(ao) => match ao {
-                ast::AddOp::Plus => ArithmOp::Add.into(),
-                ast::AddOp::Minus => ArithmOp::Sub.into(),
-            },
-            ast::Operator::MulOp(mo) => match mo {
-                ast::MulOp::Times => ArithmOp::Mul.into(),
-                ast::MulOp::Div => ArithmOp::Div.into(),
-                ast::MulOp::Mod => ArithmOp::Mod.into(),
+            ast::Operator::ArithmOp(ao) => match ao {
+                ast::ArithmOp::Plus => ArithmOp::Add.into(),
+                ast::ArithmOp::Minus => ArithmOp::Sub.into(),
+                ast::ArithmOp::Times => ArithmOp::Mul.into(),
+                ast::ArithmOp::Div => ArithmOp::Div.into(),
+                ast::ArithmOp::Mod => ArithmOp::Mod.into(),
             },
         }
     }

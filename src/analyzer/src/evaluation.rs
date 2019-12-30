@@ -88,8 +88,8 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
 fn eval_operator(op: &ast::Operator, val1: Value, val2: Value) -> Option<Value> {
     use ast::Operator::*;
     use ast::RelOp::*;
-    use ast::AddOp::*;
-    use ast::MulOp::*;
+    use ast::ArithmOp::*;
+    use ast::ArithmOp::*;
     match (val1, val2) {
         (Value::Int(v1), Value::Int(v2)) => {
             match op {
@@ -99,11 +99,11 @@ fn eval_operator(op: &ast::Operator, val1: Value, val2: Value) -> Option<Value> 
                RelOp(GE) => Some(Value::Bool(v1 >= v2)),
                RelOp(EQ) => Some(Value::Bool(v1 == v2)),
                RelOp(NE) => Some(Value::Bool(v1 != v2)),
-               AddOp(Plus) => Some(Value::Int(v1 + v2)),
-               AddOp(Minus) => Some(Value::Int(v1 - v2)),
-               MulOp(Times) => Some(Value::Int(v1 * v2)),
-               MulOp(Div) => Some(Value::Int(v1 / v2)),
-               MulOp(Mod) => Some(Value::Int(v1 % v2)),
+               ArithmOp(Plus) => Some(Value::Int(v1 + v2)),
+               ArithmOp(Minus) => Some(Value::Int(v1 - v2)),
+               ArithmOp(Times) => Some(Value::Int(v1 * v2)),
+               ArithmOp(Div) => Some(Value::Int(v1 / v2)),
+               ArithmOp(Mod) => Some(Value::Int(v1 % v2)),
             }
         }
 
@@ -115,11 +115,11 @@ fn eval_operator(op: &ast::Operator, val1: Value, val2: Value) -> Option<Value> 
                RelOp(LE) |
                RelOp(GT) |
                RelOp(GE) |
-               AddOp(Plus) |
-               AddOp(Minus) |
-               MulOp(Times) |
-               MulOp(Div) |
-               MulOp(Mod) => None,
+               ArithmOp(Plus) |
+               ArithmOp(Minus) |
+               ArithmOp(Times) |
+               ArithmOp(Div) |
+               ArithmOp(Mod) => None,
             }
         }
 
@@ -131,11 +131,11 @@ fn eval_operator(op: &ast::Operator, val1: Value, val2: Value) -> Option<Value> 
                RelOp(GE) => Some(Value::Bool(v1 >= v2)),
                RelOp(EQ) => Some(Value::Bool(v1 == v2)),
                RelOp(NE) => Some(Value::Bool(v1 != v2)),
-               AddOp(Plus) => Some(Value::Str(format!("{}{}", v1, v2))),
-               AddOp(Minus) |
-               MulOp(Times) |
-               MulOp(Div) |
-               MulOp(Mod) => None,
+               ArithmOp(Plus) => Some(Value::Str(format!("{}{}", v1, v2))),
+               ArithmOp(Minus) |
+               ArithmOp(Times) |
+               ArithmOp(Div) |
+               ArithmOp(Mod) => None,
             }
         }
 

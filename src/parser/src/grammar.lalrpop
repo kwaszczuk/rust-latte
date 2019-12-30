@@ -545,14 +545,14 @@ pub Expr6: ast::Expr = {
 // ------------------- Operators -------------------
 
 pub AddOp: ast::Operator = {
-    "+" => ast::Operator::AddOp(ast::AddOp::Plus),  // Plus
-    "-" => ast::Operator::AddOp(ast::AddOp::Minus), // Minus
+    "+" => ast::Operator::ArithmOp(ast::ArithmOp::Plus),  // Plus
+    "-" => ast::Operator::ArithmOp(ast::ArithmOp::Minus), // Minus
 };
 
 pub MulOp: ast::Operator = {
-    "*" => ast::Operator::MulOp(ast::MulOp::Times), // Times
-    "/" => ast::Operator::MulOp(ast::MulOp::Div),   // Div
-    "%" => ast::Operator::MulOp(ast::MulOp::Mod),   // Mod
+    "*" => ast::Operator::ArithmOp(ast::ArithmOp::Times), // Times
+    "/" => ast::Operator::ArithmOp(ast::ArithmOp::Div),   // Div
+    "%" => ast::Operator::ArithmOp(ast::ArithmOp::Mod),   // Mod
 };
 
 pub RelOp: ast::Operator = {

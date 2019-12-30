@@ -151,32 +151,20 @@ pub enum ExprTypes {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum AddOp {
+pub enum ArithmOp {
     Plus,
     Minus,
+    Times,
+    Div,
+    Mod
 }
 
-impl fmt::Display for AddOp {
+impl fmt::Display for ArithmOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use AddOp::*;
+        use ArithmOp::*;
         match self {
             Plus => write!(f, "+"),
             Minus => write!(f, "-"),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum MulOp {
-    Times,
-    Div,
-    Mod,
-}
-
-impl fmt::Display for MulOp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use MulOp::*;
-        match self {
             Times => write!(f, "*"),
             Div => write!(f, "/"),
             Mod => write!(f, "%"),
@@ -211,8 +199,7 @@ impl fmt::Display for RelOp {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
     RelOp(RelOp),
-    AddOp(AddOp),
-    MulOp(MulOp),
+    ArithmOp(ArithmOp),
 }
 
 impl fmt::Display for Operator {
@@ -220,8 +207,7 @@ impl fmt::Display for Operator {
         use Operator::*;
         match self {
             RelOp(op) => write!(f, "{}", op),
-            AddOp(op) => write!(f, "{}", op),
-            MulOp(op) => write!(f, "{}", op),
+            ArithmOp(op) => write!(f, "{}", op),
         }
     }
 }

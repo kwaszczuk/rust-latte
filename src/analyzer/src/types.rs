@@ -40,24 +40,21 @@ impl VarType {
         match op {
             ast::Operator::RelOp(rel_op) => match self {
                 VarType::Simple(SimpleType::Int)
-              | VarType::Simple(SimpleType::Bool)
-              | VarType::Simple(SimpleType::Str) => true,
+              | VarType::Simple(SimpleType::Bool) => true,
+
+                VarType::Simple(SimpleType::Str) => match rel_op {
+                    ast::RelOp::EQ
+                  | ast::RelOp::NE => true,
+
+                    _ => false
+                },
 
                 VarType::Simple(SimpleType::Void)
               | VarType::Fun(_) => false,
             },
 
-            ast::Operator::MulOp(mul_op) => match mul_op {
-                ast::MulOp::Times => match self {
-                    VarType::Simple(SimpleType::Int)
-                  | VarType::Simple(SimpleType::Bool) => true,
-
-                    VarType::Simple(SimpleType::Str)
-                  | VarType::Simple(SimpleType::Void)
-                  | VarType::Fun(_) => false,
-                },
-
-                ast::MulOp::Div => match self {
+            ast::Operator::ArithmOp(mul_op) => match mul_op {
+                ast::ArithmOp::Times => match self {
                     VarType::Simple(SimpleType::Int) => true,
 
                     VarType::Simple(SimpleType::Bool)
@@ -66,7 +63,7 @@ impl VarType {
                   | VarType::Fun(_) => false,
                 },
 
-                ast::MulOp::Mod => match self {
+                ast::ArithmOp::Div => match self {
                     VarType::Simple(SimpleType::Int) => true,
 
                     VarType::Simple(SimpleType::Bool)
@@ -74,23 +71,30 @@ impl VarType {
                   | VarType::Simple(SimpleType::Void)
                   | VarType::Fun(_) => false,
                 },
-            },
 
-            ast::Operator::AddOp(add_op) => match add_op {
-                ast::AddOp::Plus => match self {
+                ast::ArithmOp::Mod => match self {
+                    VarType::Simple(SimpleType::Int) => true,
+
+                    VarType::Simple(SimpleType::Bool)
+                  | VarType::Simple(SimpleType::Str)
+                  | VarType::Simple(SimpleType::Void)
+                  | VarType::Fun(_) => false,
+                },
+
+                ast::ArithmOp::Plus => match self {
                     VarType::Simple(SimpleType::Int)
+                  | VarType::Simple(SimpleType::Str) => true,
+
+                    VarType::Simple(SimpleType::Void)
                   | VarType::Simple(SimpleType::Bool)
-                  | VarType::Simple(SimpleType::Str)
-                  | VarType::Simple(SimpleType::Void) => true,
-
-                    VarType::Fun(_) => false,
+                  | VarType::Fun(_) => false,
                 },
 
-                ast::AddOp::Minus => match self {
-                    VarType::Simple(SimpleType::Int)
-                  | VarType::Simple(SimpleType::Bool) => true,
+                ast::ArithmOp::Minus => match self {
+                    VarType::Simple(SimpleType::Int) => true,
 
-                    VarType::Simple(SimpleType::Str)
+                    VarType::Simple(SimpleType::Bool)
+                  | VarType::Simple(SimpleType::Str)
                   | VarType::Simple(SimpleType::Void)
                   | VarType::Fun(_) => false,
                 },

@@ -18,5 +18,5 @@ name = "latc"
 path = "src/cli/src/main.rs"
 
 [[bin]]
-name = "latc_x86"
+name = "latc_llvm"
 path = "src/cli/src/main.rs"

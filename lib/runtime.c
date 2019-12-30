@@ -25,7 +25,7 @@ char* readString() {
 
 int readInt() {
   int x;
-  scanf("%d", &x);
+  scanf("%d ", &x);
   return x;
 }
 

@@ -567,13 +567,21 @@ pub RelOp: ast::Operator = {
 // ------------------- BASIC PARSING TYPES -------------------
 
 pub PInteger: i32 = {
-  r"\d+" =>? i32::from_str(<>).map_err(|_| ParseError::User{ error: "integer overflow" }),
+    r"\d+" =>? i32::from_str(<>).map_err(|_| ParseError::User{ error: "integer overflow" }),
 };
 
 pub PIdent: String = {
-  r"[a-zA-Z][[:word:]]*" => String::from(<>),
+    r"[a-zA-Z][[:word:]]*" => String::from(<>),
 };
 
 pub PString: String = {
-  r#""(\\"|[[:print:]--"])*""# => String::from(<>),
+    r#""(\\"|[[:print:]--"])*""# => {
+        // remove apostrophes from the beginning and the end of string
+        let s = String::from(<>);
+        let r = s.chars()
+         .skip(1)
+         .take(s.len() - 2)
+         .collect();
+        r
+  },
 };

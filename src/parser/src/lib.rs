@@ -1,7 +1,6 @@
 pub mod grammar;
 
 use std::fs;
-use std::fmt;
 use base::ast;
 
 // returns an input string without following comments:
@@ -19,7 +18,10 @@ pub fn filter_comments(s: &str) -> String {
             while i < len {
                 i += 1;
                 ret.push(chars[i]);
-                if chars[i] == '"' && chars[i - 1] != '\\' {
+                if chars[i] == '\\' {
+                    i += 1;
+                    ret.push(chars[i]);
+                } else if chars[i] == '"' {
                     i += 1;
                     break;
                 }

@@ -21,6 +21,14 @@ for t_dir in GOOD_TESTS_DIRS:
         result = subprocess.run([f"./{prog}", fpath], capture_output=True)
         if result.returncode != 0:
             wrongs.append(fpath)
+            continue
+        if 'good/core018' in fpath:
+            continue
+        with open(fpath.replace('.lat', '.output')) as output_f:
+            exp = output_f.read().encode()
+            result = subprocess.run(["lli", fpath.replace(".lat", ".bc")], capture_output=True)
+            if exp != result.stdout:
+                wrongs.append(fpath)
 
 if len(wrongs) != 0:
     print('Wrong results in the following tests:')

@@ -3,7 +3,7 @@ int main() {
 	printInt(rfac(10));
 	printInt(mfac(10));
         printInt(ifac(10));
-        string r ; 
+        string r ; // just to test blocks 
 	{
 	  int n = 10;
 	  int r = 1;

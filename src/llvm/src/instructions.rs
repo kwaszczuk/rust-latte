@@ -119,17 +119,24 @@ impl fmt::Display for Type {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Const {
-    Int {
-        value: i32,
-    },
+    Int(i32),
     True,
     False,
     Null,
 }
 
+impl From<bool> for Const {
+    fn from(b: bool) -> Self {
+        match b {
+            false => Const::False,
+            true => Const::True,
+        }
+    }
+}
+
 impl From<i32> for Const {
     fn from(v: i32) -> Self {
-        Const::Int { value: v }
+        Const::Int(v)
     }
 }
 
@@ -137,7 +144,7 @@ impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Const::*;
         match self {
-            Int { value } => write!(f, "{}", value),
+            Int(value) => write!(f, "{}", value),
             True => write!(f, "true"),
             False => write!(f, "false"),
             Null => {
@@ -339,6 +346,7 @@ impl fmt::Display for Instr {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Block {
     pub label: Option<Label>,
     pub instrs: Vec<Instr>,
@@ -357,6 +365,7 @@ impl fmt::Display for Block {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     pub ret_ty: Type,
     pub name: String,
@@ -384,6 +393,7 @@ impl fmt::Display for Function {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Program {
     pub declares: Vec<Function>,
     pub statics: Vec<(Static, String)>,
@@ -405,7 +415,7 @@ impl fmt::Display for Program {
             let escaped_str = escape_string(str_.clone());
             let ty = Type::new_array(Type::Int8, length_after_escape(str_.clone()));
             format!(
-                "{} = constant {} c\"{}\", align 1 ",
+                "{} = constant {} c\"{}\", align 1",
                 static_, ty, escaped_str
             )
         }).collect();

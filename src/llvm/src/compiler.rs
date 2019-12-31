@@ -257,7 +257,7 @@ impl LLVMCompiler {
                 dest: (arg_ty.clone(), new_reg.clone()),
             });
             self.add_instr(LLVM::Instr::Store {
-                dest: (LLVM::Type::new_ptr(arg_ty.clone()), new_reg.clone()),
+                dest: (LLVM::Type::new_ptr(arg_ty.clone()), new_reg.clone().into()),
                 src: (arg_ty.clone(), arg_reg.into()),
             });
         }

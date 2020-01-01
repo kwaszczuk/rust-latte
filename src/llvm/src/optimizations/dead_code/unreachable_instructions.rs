@@ -2,7 +2,6 @@ use std::collections::{HashMap};
 
 use crate::instructions as LLVM;
 use crate::optimizations::base;
-use crate::utils::{blocks_to_instructions, instructions_to_blocks};
 
 pub struct Optimizer {
 }
@@ -60,7 +59,7 @@ impl Optimizer {
                     new_instrs.push(i.clone());
                 },
 
-                Branch(LLVM::Branch::Conditional { ty, val, true_label, false_label }) => {
+                Branch(LLVM::Branch::Conditional { ty: _, val, true_label, false_label }) => {
                     match val {
                         LLVM::Value::Const(LLVM::Const::True) => {
                             new_instrs.push(Branch(LLVM::Branch::Direct {

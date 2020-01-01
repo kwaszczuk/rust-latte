@@ -238,7 +238,7 @@ impl SemanticAnalyzer {
 
         for stmt in &block.stmts {
             match &stmt.value {
-                Ret { ret_loc, value } => {
+                Ret { ret_loc: _, value: _ } => {
                     return true
                 },
                 While { expr, block } => {
@@ -376,7 +376,7 @@ impl SemanticAnalyzer {
             },
 
             Ret { ret_loc, value } => {
-                let mut ret_ty;
+                let ret_ty;
                 match &value {
                     Some(expr) => {
                         if let Ok(ty) = self.analyse_expression(&expr) {
@@ -592,8 +592,6 @@ impl SemanticAnalyzer {
             },
 
             EString { value: _ } => Ok(Simple(Str)),
-
-            _ => Err(())
         }
     }
 }

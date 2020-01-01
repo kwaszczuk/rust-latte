@@ -93,7 +93,7 @@ impl LLVMCompiler {
     }
 
     fn add_instr(&mut self, instr: LLVM::Instr) {
-        if let LLVM::Instr::Label { val, preds } = &instr {
+        if let LLVM::Instr::Label { val, preds: _ } = &instr {
             // when starting new block, make sure it won't be empty by
             // putting `unreachable` instruction
             self._instrs.push(instr.clone());
@@ -189,14 +189,6 @@ impl LLVMCompiler {
     }
 
     fn init_globals(&mut self) {
-        let global_fns = vec![
-            ("printString", LLVM::Type::Void),
-            ("printInt",    LLVM::Type::Void),
-            ("error",       LLVM::Type::Void),
-            ("readInt",     LLVM::Type::Int32),
-            ("readString",  LLVM::Type::Ptr(Box::new(LLVM::Type::Int8))),
-        ];
-
         for f in &self.get_globals() {
             self.symbol_table.insert(
                 f.name.to_string(),

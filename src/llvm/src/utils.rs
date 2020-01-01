@@ -42,7 +42,7 @@ pub fn instructions_to_blocks(instrs: &Vec<LLVM::Instr>) -> Vec<LLVM::Block> {
     };
 
     for i in instrs {
-        if let LLVM::Instr::Label { val, preds } = i {
+        if let LLVM::Instr::Label { val, preds: _ } = i {
             blocks.push(current_block);
             current_block = LLVM::Block {
                 label: val.clone(),

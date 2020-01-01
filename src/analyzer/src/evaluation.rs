@@ -40,9 +40,9 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
             }
         },
 
-        ERel { op, op_loc, expr1, expr2 } |
-        EAdd { op, op_loc, expr1, expr2 } |
-        EMul { op, op_loc, expr1, expr2 } => {
+        ERel { op, op_loc: _, expr1, expr2 } |
+        EAdd { op, op_loc: _, expr1, expr2 } |
+        EMul { op, op_loc: _, expr1, expr2 } => {
             let val1 = eval_expr(&expr1);
             let val2 = eval_expr(&expr2);
             match (val1, val2) {
@@ -69,7 +69,7 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
             }
         },
 
-        EVar { ident, ident_loc } => None,
+        EVar { ident: _, ident_loc: _ } => None,
 
         ELitInt { value } => Some(Value::Int(value.clone())),
 
@@ -77,18 +77,15 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
 
         ELitFalse => Some(Value::Bool(false)),
 
-        EApp { ident, ident_loc, args, args_loc} => None,
+        EApp { ident: _, ident_loc: _, args: _, args_loc: _} => None,
 
         EString { value } => Some(Value::Str(value.clone())),
-
-        _ => None,
     }
 }
 
 fn eval_operator(op: &ast::Operator, val1: Value, val2: Value) -> Option<Value> {
     use ast::Operator::*;
     use ast::RelOp::*;
-    use ast::ArithmOp::*;
     use ast::ArithmOp::*;
     match (val1, val2) {
         (Value::Int(v1), Value::Int(v2)) => {

@@ -285,6 +285,11 @@ impl SemanticAnalyzer {
                         }
                     }
                 },
+                BStmt { block } => {
+                    if self.analyse_function_returns(&block, false, check_all_branches) {
+                        return true
+                    }
+                },
                 _ => {},
             }
         }

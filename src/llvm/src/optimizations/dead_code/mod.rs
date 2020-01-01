@@ -1,4 +1,3 @@
-
 mod unreachable_blocks;
 mod unreachable_instructions;
 mod unused_assignments;
@@ -24,8 +23,8 @@ impl Optimizer for DeadCodeOptimizer {
             Box::new(unused_assignments::Optimizer::new()),
         ];
 
-        let (new_prog, runs) = apply_optimizers(prog, &mut optimizations, 1000);
-        println!("dead code optimizations executed {} times", runs);
+        let (new_prog, runs) = apply_optimizers(prog, &mut optimizations, 100);
+        // println!("dead code optimizations executed {} times", runs);
 
         new_prog
     }

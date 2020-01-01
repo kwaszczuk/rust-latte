@@ -34,8 +34,8 @@ impl Optimizer {
         self.find_used_blocks(&fun.body);
 
         let only_used_blocks = fun.body.iter().cloned().filter(|b| {
-            if let Some(block_label) = &b.label {
-                if let Some(_) = self.used_blocks.get(&block_label) {
+            if !b.label.is_entry() {
+                if let Some(_) = self.used_blocks.get(&b.label) {
                     true
                 } else {
                     false

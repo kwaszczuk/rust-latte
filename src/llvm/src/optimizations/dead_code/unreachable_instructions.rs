@@ -101,15 +101,15 @@ impl Optimizer {
         let mut new_blocks = vec![];
         let mut jumps: HashMap<(LLVM::Label, LLVM::Label), bool> = HashMap::new();
         for b in blocks {
-            if let Some(block_label) = &b.label {
+            if !b.label.is_entry() {
                 for i in &b.instrs {
                     match i {
                         Branch(LLVM::Branch::Direct { label }) => {
-                            jumps.insert((block_label.clone(), label.clone()), true);
+                            jumps.insert((b.label.clone(), label.clone()), true);
                         },
                         Branch(LLVM::Branch::Conditional { ty: _, val: _, true_label, false_label }) => {
-                            jumps.insert((block_label.clone(), true_label.clone()), true);
-                            jumps.insert((block_label.clone(), false_label.clone()), true);
+                            jumps.insert((b.label.clone(), true_label.clone()), true);
+                            jumps.insert((b.label.clone(), false_label.clone()), true);
                         },
                         _ => {
                         }
@@ -120,12 +120,12 @@ impl Optimizer {
 
         for b in blocks {
             let mut new_instrs = vec![];
-            if let Some(block_label) = &b.label {
+            if !b.label.is_entry() {
                 for i in &b.instrs {
                     match i {
                         Phi { dest, preds } => {
                             let new_preds = preds.iter().cloned().filter(|p| {
-                                let k = (p.1.clone(), block_label.clone());
+                                let k = (p.1.clone(), b.label.clone());
                                 if let Some(_) = jumps.get(&k) {
                                     true
                                 } else {

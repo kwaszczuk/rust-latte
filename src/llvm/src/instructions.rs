@@ -20,6 +20,12 @@ pub struct Label {
     pub name: String
 }
 
+impl Label {
+    pub fn is_entry(&self) -> bool {
+        self.name.as_str() == ""
+    }
+}
+
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "%{}", self.name)
@@ -348,7 +354,7 @@ impl fmt::Display for Instr {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
-    pub label: Option<Label>,
+    pub label: Label,
     pub instrs: Vec<Instr>,
 }
 
@@ -358,9 +364,9 @@ impl fmt::Display for Block {
             .iter()
             .map(|i| "\t".to_owned() + &i.to_string())
             .collect();
-        match &self.label {
-            Some(l) => write!(f, "{}:\n{}", l.name, instrs_strs.join("\n")),
-            None => write!(f, "{}", instrs_strs.join("\n")),
+        match self.label.is_entry() {
+            true => write!(f, "{}", instrs_strs.join("\n")),
+            false => write!(f, "{}:\n{}", self.label.name, instrs_strs.join("\n")),
         }
     }
 }

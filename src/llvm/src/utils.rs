@@ -37,7 +37,7 @@ pub fn length_after_escape(s: String) -> usize {
 pub fn instructions_to_blocks(instrs: &Vec<LLVM::Instr>) -> Vec<LLVM::Block> {
     let mut blocks = vec![];
     let mut current_block = LLVM::Block {
-        label: None,
+        label: LLVM::Label { name: "".to_string() },
         instrs: vec![],
     };
 
@@ -45,7 +45,7 @@ pub fn instructions_to_blocks(instrs: &Vec<LLVM::Instr>) -> Vec<LLVM::Block> {
         if let LLVM::Instr::Label { val, preds } = i {
             blocks.push(current_block);
             current_block = LLVM::Block {
-                label: Some(val.clone()),
+                label: val.clone(),
                 instrs: vec![],
             };
         } else {
@@ -60,9 +60,9 @@ pub fn instructions_to_blocks(instrs: &Vec<LLVM::Instr>) -> Vec<LLVM::Block> {
 pub fn blocks_to_instructions(blocks: &Vec<LLVM::Block>) -> Vec<LLVM::Instr> {
     let mut instrs = vec![];
     for b in blocks {
-        if let Some(l) = &b.label {
+        if !b.label.is_entry() {
             instrs.push(LLVM::Instr::Label {
-                val: l.clone(),
+                val: b.label.clone(),
                 preds: vec![],
             });
         }

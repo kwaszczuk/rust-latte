@@ -21,8 +21,8 @@ impl Optimizer for ConstantsOptimizer {
             Box::new(propagation::Optimizer::new()),
         ];
 
-        let (new_prog, runs) = apply_optimizers(prog, &mut optimizations, 1000);
-        println!("constants optimizations executed {} times", runs);
+        let (new_prog, runs) = apply_optimizers(prog, &mut optimizations, 100);
+        // println!("constants optimizations executed {} times", runs);
 
         new_prog
     }

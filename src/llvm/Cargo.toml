@@ -11,3 +11,12 @@ parser = { path = "../parser" }
 [lib]
 name = "llvm"
 path = "src/lib.rs"
+
+[features]
+optimization-constants = []
+optimization-dead_code = []
+optimization-branches = []
+all-optimizations = []
+no-optimizations = []
+
+default=["all-optimizations"]

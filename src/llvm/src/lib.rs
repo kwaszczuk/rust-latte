@@ -21,17 +21,25 @@ pub fn compile(ast_tree: &ast::Program) -> instructions::Program {
     let mut prog = compiler::LLVMCompiler::run(&ast_tree);
 
     // optimize generated LLVM code
-    prog = optimize(prog, 1);
+    #[cfg(not(feature="no-optimizations"))] {
+        prog = optimize(prog, 1);
+    }
 
     prog
 }
 
 fn optimize(prog: instructions::Program, opt_level: usize) -> instructions::Program {
-    let mut optimizations: Vec<Box<dyn Optimizer>> = vec![
-        Box::new(ConstantsOptimizer::new()),
-        Box::new(DeadCodeOptimizer::new()),
-        Box::new(BranchesOptimizer::new()),
-    ];
+    let mut optimizations: Vec<Box<dyn Optimizer>> = vec![];
+
+    #[cfg(any(feature="all-optimizations", feature="optimizations-constants"))] {
+        optimizations.push(Box::new(ConstantsOptimizer::new()));
+    }
+    #[cfg(any(feature="all-optimizations", feature="optimizations-dead-code"))] {
+        optimizations.push(Box::new(DeadCodeOptimizer::new()));
+    }
+    #[cfg(any(feature="all-optimizations", feature="optimizations-branches"))] {
+        optimizations.push(Box::new(BranchesOptimizer::new()));
+    }
 
     let (prog, _) = apply_optimizers(&prog, &mut optimizations, 100);
     prog

@@ -1,9 +1,21 @@
 .PHONY: all
 all: latc llvm
 
+CFLAGS=--release
+ifeq ($(SILENT),1)
+	CFLAGS += --message-format short
+endif
+
+ifeq ($(PARSER_ONLY),1)
+  	CFLAGS += --features "no-analysis"
+endif
+
+ifeq ($(ANALYSIS_ONLY),1)
+  	CFLAGS += --features "no-codegen"
+endif
+
 build_x86 build_latc build_llvm:
-	cargo build --release --bin $(BINARY_NAME) --all --exclude generate_parser
-	# cargo build --release --bin $(BINARY_NAME) --message-format short --all --exclude generate_parser
+	cargo build $(CFLAGS) --bin $(BINARY_NAME) --all --exclude generate_parser
 	cp target/release/$(BINARY_NAME) .
 
 parser:

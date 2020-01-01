@@ -48,43 +48,47 @@ fn main() {
             process::exit(1)
         });
 
-    match analyzer::run(&ast_tree) {
-        Some(errors)=> {
+    #[cfg(not(feature="no-analysis"))] {
+        match analyzer::run(&ast_tree) {
+            Some(errors)=> {
+                eprintln!("ERROR");
+                analyzer::prettyprint_errors(errors, filename);
+                process::exit(1)
+            }
+            None => {}
+        }
+    }
+
+    #[cfg(all(not(feature="no-codegen"), not(feature="no-analysis")))] {
+        let code = llvm::compile(&ast_tree);
+        let output_filename_ll = get_output_name(filename, "ll");
+        fs::write(output_filename_ll.as_str(), format!("{}", code));
+
+        let output_filename_bc = get_output_name(filename, "bc");
+        let as_out = process::Command::new("llvm-as")
+                         .arg("-o")
+                         .arg(&output_filename_bc)
+                         .arg(&output_filename_ll)
+                         .output()
+                         .expect("unable to write .bc file");
+        if !as_out.status.success() {
             eprintln!("ERROR");
-            analyzer::prettyprint_errors(errors, filename);
+            io::stderr().write_all(&as_out.stderr).unwrap();
             process::exit(1)
         }
-        None => {}
-    }
 
-    let code = llvm::compile(&ast_tree);
-    let output_filename_ll = get_output_name(filename, "ll");
-    fs::write(output_filename_ll.as_str(), format!("{}", code));
-
-    let output_filename_bc = get_output_name(filename, "bc");
-    let as_out = process::Command::new("llvm-as")
-                     .arg("-o")
-                     .arg(&output_filename_bc)
-                     .arg(&output_filename_ll)
-                     .output()
-                     .expect("unable to write .bc file");
-    if !as_out.status.success() {
-        eprintln!("ERROR");
-        io::stderr().write_all(&as_out.stderr).unwrap();
-        process::exit(1)
-    }
-
-    let link_out = process::Command::new("llvm-link")
-                     .arg("-o")
-                     .arg(&output_filename_bc)
-                     .arg(&output_filename_bc)
-                     .arg("lib/runtime.bc")
-                     .output()
-                     .expect("unable to link .bc file and runtime.bc");
-    if !link_out.status.success() {
-        eprintln!("ERROR");
-        io::stderr().write_all(&link_out.stderr).unwrap();
-        process::exit(1)
+        let link_out = process::Command::new("llvm-link")
+                         .arg("-o")
+                         .arg(&output_filename_bc)
+                         .arg(&output_filename_bc)
+                         .arg("lib/runtime.bc")
+                         .output()
+                         .expect("unable to link .bc file and runtime.bc");
+        if !link_out.status.success() {
+            eprintln!("ERROR");
+            io::stderr().write_all(&link_out.stderr).unwrap();
+            process::exit(1)
+        }
     }
 
     eprintln!("OK");

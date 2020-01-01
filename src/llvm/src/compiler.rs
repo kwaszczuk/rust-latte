@@ -492,17 +492,9 @@ impl LLVMCompiler {
                 let mut expr2_block_label = self.next_label();
                 let continue_block_label = self.next_label();
 
-                let cmp_reg = self.next_register();
-                self.add_instr(LLVM::Instr::Compare {
-                    dest_reg: cmp_reg.clone(),
-                    op: RelOp::EQ.into(),
-                    ty: ty1.clone(),
-                    val_lhs: val1,
-                    val_rhs: LLVM::Const::True.into(),
-                });
                 self.add_instr(LLVM::Branch::Conditional {
                     ty: LLVM::Type::Int1,
-                    val: cmp_reg.clone().into(),
+                    val: val1,
                     true_label: continue_block_label.clone(),
                     false_label: expr2_block_label.clone(),
                 }.into());
@@ -537,19 +529,11 @@ impl LLVMCompiler {
                 let mut expr2_block_label = self.next_label();
                 let continue_block_label = self.next_label();
 
-                let cmp_reg = self.next_register();
-                self.add_instr(LLVM::Instr::Compare {
-                    dest_reg: cmp_reg.clone(),
-                    op: RelOp::EQ.into(),
-                    ty: ty1.clone(),
-                    val_lhs: val1,
-                    val_rhs: LLVM::Const::False.into(),
-                });
                 self.add_instr(LLVM::Branch::Conditional {
                     ty: LLVM::Type::Int1,
-                    val: cmp_reg.clone().into(),
-                    true_label: continue_block_label.clone(),
-                    false_label: expr2_block_label.clone(),
+                    val: val1,
+                    true_label: expr2_block_label.clone(),
+                    false_label: continue_block_label.clone(),
                 }.into());
 
                 self.add_instr(expr2_block_label.clone().into());

@@ -4,7 +4,7 @@ use crate::operators::{Operator};
 use crate::utils::{escape_string, length_after_escape};
 use base::ast;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct Register {
     pub name: String
 }
@@ -15,7 +15,7 @@ impl fmt::Display for Register {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct Label {
     pub name: String
 }
@@ -242,7 +242,7 @@ pub enum Instr {
         val_rhs: Value,
     },
     Call {
-        reg_dest: Option<Register>,
+        dest_reg: Option<Register>,
         ret_ty: Type,
         name: String,
         args: Vec<(Type, Value)>,
@@ -308,12 +308,12 @@ impl fmt::Display for Instr {
                 f, "{} = icmp {} {} {}, {}",
                 dest_reg, op, ty, val_lhs, val_rhs
             ),
-            Call { reg_dest, ret_ty, name, args } => {
+            Call { dest_reg, ret_ty, name, args } => {
                 let args_vec: Vec<String> = args.iter()
                     .map(|(ty, val)| format!("{} {}", ty, val))
                     .collect();
                 let args_str = args_vec.join(", ");
-                match reg_dest {
+                match dest_reg {
                     Some(reg) => write!(f, "{} = call {} @{}({})", reg, ret_ty, name, args_str),
                     None      => write!(f, "call {} @{}({})", ret_ty, name, args_str),
                 }

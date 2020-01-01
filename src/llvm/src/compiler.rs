@@ -282,7 +282,7 @@ impl LLVMCompiler {
             ret_ty: fn_ret_ty,
             name: fn_def.ident.clone(),
             args: fn_def.args.iter().map(|a| LLVM::Type::from(&a.ty)).collect(),
-            body: instructions_to_blocks(self.get_instrs()),
+            body: instructions_to_blocks(&self.get_instrs()),
         }
     }
 
@@ -596,7 +596,7 @@ impl LLVMCompiler {
                         };
 
                         self.add_instr(LLVM::Instr::Call {
-                            reg_dest: Some(ret_reg.clone()),
+                            dest_reg: Some(ret_reg.clone()),
                             ret_ty: LLVM::Type::Int1,
                             name: fn_name.to_string(),
                             args: vec![
@@ -640,7 +640,7 @@ impl LLVMCompiler {
                         };
 
                         self.add_instr(LLVM::Instr::Call {
-                            reg_dest: Some(ret_reg.clone()),
+                            dest_reg: Some(ret_reg.clone()),
                             ret_ty: ty1.clone(),
                             name: fn_name.to_string(),
                             args: vec![
@@ -723,7 +723,7 @@ impl LLVMCompiler {
                 if let LLVM::Type::Fun { ret_ty } = var.ty {
                     if let LLVM::Type::Void = *ret_ty {
                         self.add_instr(LLVM::Instr::Call {
-                            reg_dest: None,
+                            dest_reg: None,
                             ret_ty: *ret_ty.clone(),
                             name: ident.clone(),
                             args: args_expr,
@@ -731,7 +731,7 @@ impl LLVMCompiler {
                         (LLVM::Type::Void, LLVM::Const::Null.into())
                     } else {
                         self.add_instr(LLVM::Instr::Call {
-                            reg_dest: Some(ret_reg.clone()),
+                            dest_reg: Some(ret_reg.clone()),
                             ret_ty: *ret_ty.clone(),
                             name: ident.clone(),
                             args: args_expr,

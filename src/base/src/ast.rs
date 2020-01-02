@@ -135,7 +135,7 @@ pub enum ExprTypes {
         ident_loc: Location,
     },
     ELitInt {
-        value: i32,
+        value: String,
     },
     ELitTrue,
     ELitFalse,

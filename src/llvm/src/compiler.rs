@@ -680,7 +680,7 @@ impl LLVMCompiler {
             },
 
             ELitInt { value } => {
-                (LLVM::Type::Int32, LLVM::Const::from(value.clone()).into())
+                (LLVM::Type::Int32, LLVM::Const::from(value.parse::<i32>().unwrap()).into())
             },
 
             ELitTrue => {

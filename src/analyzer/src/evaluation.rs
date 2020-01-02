@@ -71,7 +71,7 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
 
         EVar { ident: _, ident_loc: _ } => None,
 
-        ELitInt { value } => Some(Value::Int(value.clone())),
+        ELitInt { value } => Some(Value::Int(value.parse::<i32>().unwrap())),
 
         ELitTrue => Some(Value::Bool(true)),
 

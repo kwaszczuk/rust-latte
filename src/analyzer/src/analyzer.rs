@@ -551,7 +551,18 @@ impl SemanticAnalyzer {
                 Ok(self.symbol_table.get(&ident).unwrap().ty)
             },
 
-            ELitInt { value: _ } => Ok(Simple(Int)),
+            ELitInt { value } => {
+                match value.parse::<i32>() {
+                    Ok(_) => {},
+                    Err(_) => {
+                        self.throw(SemanticError(IntegerOverflow {
+                            value: value.clone(),
+                            loc: expr.all_loc.clone(),
+                        }));
+                    },
+                }
+                Ok(Simple(Int))
+            },
 
             ELitTrue |
             ELitFalse => Ok(Simple(Bool)),

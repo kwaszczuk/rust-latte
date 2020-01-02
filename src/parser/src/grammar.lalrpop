@@ -1,7 +1,5 @@
-use std::str::FromStr;
 use base::ast;
 use base::types::Location;
-use lalrpop_util::ParseError;
 
 grammar;
 
@@ -566,8 +564,8 @@ pub RelOp: ast::Operator = {
 
 // ------------------- BASIC PARSING TYPES -------------------
 
-pub PInteger: i32 = {
-    r"\d+" =>? i32::from_str(<>).map_err(|_| ParseError::User{ error: "integer overflow" }),
+pub PInteger: String = {
+    r"\d+" => String::from(<>),
 };
 
 pub PIdent: String = {

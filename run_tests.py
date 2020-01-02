@@ -29,8 +29,6 @@ for t_dir in GOOD_TESTS_DIRS:
             exp = output_f.read().encode()
             result = subprocess.run(["lli", fpath.replace(".lat", ".bc")], capture_output=True)
             if exp != result.stdout:
-                print(exp)
-                print(result.stdout)
                 wrongs.append(fpath)
 
 if len(wrongs) != 0:

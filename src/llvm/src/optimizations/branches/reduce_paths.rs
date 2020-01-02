@@ -4,11 +4,29 @@ use crate::instructions as LLVM;
 use crate::optimizations::base;
 use crate::control_flow_graph::{generate_graph, CFGNode, ControlFlowGraph};
 
-fn is_node_backward_reducible(node: &CFGNode) -> bool {
-    node.prevs.len() == 1
+fn is_node_backward_reducible(node: &CFGNode, cfg: &ControlFlowGraph) -> bool {
+    if node.prevs.len() == 1 {
+        // If some of the next block or node itself contains PHI instruction, then
+        // it's condition will be messed up after join, so we can't merge it just yet.
+        // Maybe we will be able to do it on some other run if it'll appear to be
+        // a trivial phi.
+        if let Some(LLVM::Instr::Phi { dest: _, preds: _ }) = node.block.instrs.first() {
+            return false;
+        }
+
+        return node.prevs.iter().any(|p| {
+            if let Some(next_node) = cfg.nodes.get(&p) {
+                if let Some(LLVM::Instr::Phi { dest: _, preds: _ }) = next_node.block.instrs.first() {
+                    return false;
+                }
+            }
+            true
+        });
+    }
+    false
 }
 
-fn is_node_forward_reducible(node: &CFGNode) -> bool {
+fn is_node_forward_reducible(node: &CFGNode, cfg: &ControlFlowGraph) -> bool {
     node.nexts.len() == 1
 }
 
@@ -53,9 +71,9 @@ impl Optimizer {
 
     fn find_reducibles(&mut self, cfg: &ControlFlowGraph) {
         for (_, node) in &cfg.nodes {
-            if is_node_forward_reducible(&node) && !node.block.label.is_entry() {
+            if is_node_forward_reducible(&node, cfg) && !node.block.label.is_entry() {
                 let next_node = cfg.nodes.get(&node.nexts[0]).unwrap();
-                if is_node_backward_reducible(&next_node) {
+                if is_node_backward_reducible(&next_node, cfg) {
                     self.join_with.insert(node.block.label.clone(), next_node.block.label.clone());
                 }
             }

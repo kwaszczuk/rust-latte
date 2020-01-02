@@ -23,7 +23,7 @@ impl Optimizer for DeadCodeOptimizer {
             Box::new(unused_assignments::Optimizer::new()),
         ];
 
-        let (new_prog, runs) = apply_optimizers(prog, &mut optimizations, 100);
+        let (new_prog, _runs) = apply_optimizers(prog, &mut optimizations, 100);
         // println!("dead code optimizations executed {} times", runs);
 
         new_prog

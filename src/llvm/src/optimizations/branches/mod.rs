@@ -21,7 +21,7 @@ impl Optimizer for BranchesOptimizer {
             Box::new(reduce_paths::Optimizer::new()),
         ];
 
-        let (new_prog, runs) = apply_optimizers(prog, &mut optimizations, 100);
+        let (new_prog, _runs) = apply_optimizers(prog, &mut optimizations, 100);
         // println!("branches optimizations executed {} times", runs);
 
         new_prog

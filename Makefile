@@ -15,6 +15,8 @@ ifeq ($(ANALYSIS_ONLY),1)
 endif
 
 build_x86 build_latc build_llvm:
+	clang -S -emit-llvm lib/runtime.c -o lib/runtime.ll
+	llvm-as -o lib/runtime.bc lib/runtime.ll
 	cargo build $(CFLAGS) --bin $(BINARY_NAME) --all --exclude generate_parser
 	cp target/release/$(BINARY_NAME) .
 
@@ -22,7 +24,7 @@ parser:
 	cargo build --release --message-format short --manifest-path src/parser/generate/Cargo.toml
 
 clean:
-	rm -rf target/ latc*
+	rm -rf target/ latc* lib/*.bc lib/*.ll
 
 .PHONY: x86
 x86: BINARY_NAME=latc_x86

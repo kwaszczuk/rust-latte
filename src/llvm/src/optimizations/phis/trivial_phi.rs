@@ -3,10 +3,9 @@ use std::collections::{HashMap};
 use crate::instructions as LLVM;
 use crate::optimizations::base;
 use crate::utils::{blocks_to_instructions, instructions_to_blocks};
-use crate::operators::{Operator, ArithmOp, RelOp};
 
 pub struct Optimizer {
-    values: HashMap<String, LLVM::Const>
+    values: HashMap<LLVM::Register, LLVM::Value>
 }
 
 impl Optimizer {
@@ -32,6 +31,7 @@ impl Optimizer {
     pub fn optimize_function(&mut self, fun: &LLVM::Function) -> LLVM::Function {
         self.values.clear();
         let instrs = blocks_to_instructions(&fun.body);
+        self.find_trivial_phis(&instrs);
         let new_instrs = self.optimize_instructions(&instrs);
         let new_body = instructions_to_blocks(&new_instrs);
 
@@ -40,6 +40,26 @@ impl Optimizer {
             name: fun.name.clone(),
             args: fun.args.iter().cloned().collect(),
             body: new_body,
+        }
+    }
+
+    fn find_trivial_phis(&mut self, instrs: &Vec<LLVM::Instr>) {
+        use LLVM::Instr::*;
+        for i in instrs {
+            match i {
+                Phi { dest, preds } => {
+                    if preds.len() > 1 {
+                        if preds.iter().any(|p| p.0 != preds[0].0) {
+                            continue;
+                        }
+                    } else if preds.len() == 1 {
+                    } else {
+                        continue;
+                    }
+                    self.values.insert(dest.1.clone(), preds[0].0.clone());
+                },
+                _ => {},
+            }
         }
     }
 
@@ -69,54 +89,6 @@ impl Optimizer {
                 Compare { dest_reg, op, ty, val_lhs, val_rhs } => {
                     let new_val_lhs = self.optimize_value(&val_lhs);
                     let new_val_rhs = self.optimize_value(&val_rhs);
-
-                    if let (LLVM::Value::Const(c1), LLVM::Value::Const(c2)) = (new_val_lhs.clone(), new_val_rhs.clone()) {
-                        use Operator::*;
-                        use RelOp::*;
-                        use LLVM::Const::*;
-
-                        let new_val = match op {
-                            Rel(EQ) => match (c1, c2) {
-                                (Int(i1), Int(i2)) => i1 == i2,
-                                (False, False) => true,
-                                (True, True) => true,
-                                (False, True) => false,
-                                (True, False) => false,
-                                _ => { panic!("should not happen"); }
-                            },
-
-                            Rel(NE) => match (c1, c2) {
-                                (Int(i1), Int(i2)) => i1 != i2,
-                                (False, False) => false,
-                                (True, True) => false,
-                                (False, True) => true,
-                                (True, False) => true,
-                                _ => { panic!("should not happen"); }
-                            },
-
-                            Rel(GT) => match (c1, c2) {
-                                (Int(i1), Int(i2)) => i1 > i2,
-                                _ => { panic!("should not happen"); }
-                            },
-
-                            Rel(GE) => match (c1, c2) {
-                                (Int(i1), Int(i2)) => i1 >= i2,
-                                _ => { panic!("should not happen"); }
-                            },
-
-                            Rel(LT) => match (c1, c2) {
-                                (Int(i1), Int(i2)) => i1 < i2,
-                                _ => { panic!("should not happen"); }
-                            },
-
-                            Rel(LE) => match (c1, c2) {
-                                (Int(i1), Int(i2)) => i1 <= i2,
-                                _ => { panic!("should not happen"); }
-                            },
-                            _ => { panic!("should not happen"); }
-                        };
-                        self.values.insert(dest_reg.name.clone(), new_val.into());
-                    }
 
                     new_instr = Compare {
                         dest_reg,
@@ -153,21 +125,6 @@ impl Optimizer {
                 Arithm { dest, op, val_lhs, val_rhs } => {
                     let new_val_lhs = self.optimize_value(&val_lhs);
                     let new_val_rhs = self.optimize_value(&val_rhs);
-                    use LLVM::Const::*;
-
-                    if let (LLVM::Value::Const(Int(i1)), LLVM::Value::Const(Int(i2))) = (new_val_lhs.clone(), new_val_rhs.clone()) {
-                        use Operator::*;
-                        use ArithmOp::*;
-                        let new_val = match op {
-                            Arithm(Add) => i1 + i2,
-                            Arithm(Sub) => i1 - i2,
-                            Arithm(Mul) => i1 * i2,
-                            Arithm(Div) => i1 / i2,
-                            Arithm(Mod) => i1 % i2,
-                            _ => { panic!("should not happen"); }
-                        };
-                        self.values.insert(dest.1.name.clone(), new_val.into());
-                    }
 
                     new_instr = Arithm {
                         dest,
@@ -215,9 +172,9 @@ impl Optimizer {
     }
 
     fn optimize_value(&mut self, value: &LLVM::Value) -> LLVM::Value {
-        if let LLVM::Value::Register(LLVM::Register { name }) = value.clone() {
-            if let Some(new_val) = self.values.get(&name) {
-                return new_val.clone().into();
+        if let LLVM::Value::Register(r) = value {
+            if let Some(new_val) = self.values.get(&r) {
+                return new_val.clone();
             }
         }
         value.clone()
@@ -226,6 +183,6 @@ impl Optimizer {
 
 impl base::Optimizer for Optimizer {
     fn run(&mut self, prog: &LLVM::Program) -> LLVM::Program {
-        self.optimize_program(prog)
+        self.optimize_program(&prog)
     }
 }

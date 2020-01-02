@@ -19,7 +19,7 @@ pub fn apply_optimizers(prog: &LLVM::Program, opts: &mut Vec<Box<dyn Optimizer>>
         if old_prog == new_prog {
             break
         } else if runs >= max_runs {
-            println!("WARNING: optimizations stopped after reaching maximal executions count!");
+            // println!("WARNING: optimizations stopped after reaching maximal executions count!");
             break;
         }
     }

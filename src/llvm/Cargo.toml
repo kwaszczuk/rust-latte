@@ -16,6 +16,7 @@ path = "src/lib.rs"
 optimization-constants = []
 optimization-dead_code = []
 optimization-branches = []
+optimization-phis = []
 all-optimizations = []
 no-optimizations = []
 

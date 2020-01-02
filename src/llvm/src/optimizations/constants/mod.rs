@@ -2,6 +2,7 @@ mod folding;
 mod propagation;
 
 use crate::optimizations::base::{Optimizer, apply_optimizers};
+use crate::optimizations::globals;
 use crate::instructions as LLVM;
 
 pub struct ConstantsOptimizer {
@@ -21,7 +22,7 @@ impl Optimizer for ConstantsOptimizer {
             Box::new(propagation::Optimizer::new()),
         ];
 
-        let (new_prog, _runs) = apply_optimizers(prog, &mut optimizations, 100);
+        let (new_prog, _runs) = apply_optimizers(prog, &mut optimizations, globals::MAX_OPTIMIZATION_ITERATIONS);
         // println!("constants optimizations executed {} times", runs);
 
         new_prog

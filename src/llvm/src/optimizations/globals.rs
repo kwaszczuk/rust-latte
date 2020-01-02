@@ -1,0 +1,1 @@
+pub static MAX_OPTIMIZATION_ITERATIONS: usize = 100;

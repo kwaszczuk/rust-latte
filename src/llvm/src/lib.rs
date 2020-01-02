@@ -11,6 +11,7 @@ mod optimizations {
     pub mod dead_code;
     pub mod phis;
     pub mod branches;
+    pub mod globals;
 }
 
 use optimizations::base::{Optimizer, apply_optimizers};
@@ -18,6 +19,7 @@ use optimizations::constants::{ConstantsOptimizer};
 use optimizations::dead_code::{DeadCodeOptimizer};
 use optimizations::branches::{BranchesOptimizer};
 use optimizations::phis::{PhisOptimizer};
+use optimizations::globals;
 
 pub fn compile(ast_tree: &ast::Program) -> instructions::Program {
     let mut prog = compiler::LLVMCompiler::run(&ast_tree);
@@ -46,6 +48,6 @@ fn optimize(prog: instructions::Program, opt_level: usize) -> instructions::Prog
         optimizations.push(Box::new(PhisOptimizer::new()));
     }
 
-    let (prog, _) = apply_optimizers(&prog, &mut optimizations, 100);
+    let (prog, _) = apply_optimizers(&prog, &mut optimizations, globals::MAX_OPTIMIZATION_ITERATIONS);
     prog
 }

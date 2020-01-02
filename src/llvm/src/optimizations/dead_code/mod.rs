@@ -3,6 +3,7 @@ mod unreachable_instructions;
 mod unused_assignments;
 
 use crate::optimizations::base::{Optimizer, apply_optimizers};
+use crate::optimizations::globals;
 use crate::instructions as LLVM;
 
 pub struct DeadCodeOptimizer {
@@ -23,7 +24,7 @@ impl Optimizer for DeadCodeOptimizer {
             Box::new(unused_assignments::Optimizer::new()),
         ];
 
-        let (new_prog, _runs) = apply_optimizers(prog, &mut optimizations, 100);
+        let (new_prog, _runs) = apply_optimizers(prog, &mut optimizations, globals::MAX_OPTIMIZATION_ITERATIONS);
         // println!("dead code optimizations executed {} times", runs);
 
         new_prog

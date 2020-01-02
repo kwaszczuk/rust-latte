@@ -4,8 +4,8 @@ pub trait Optimizer {
     fn run(&mut self, prog: &LLVM::Program) -> LLVM::Program;
 }
 
-pub fn apply_optimizers(prog: &LLVM::Program, opts: &mut Vec<Box<dyn Optimizer>>, max_runs: i32) -> (LLVM::Program, i32) {
-    let mut runs = 0;
+pub fn apply_optimizers(prog: &LLVM::Program, opts: &mut Vec<Box<dyn Optimizer>>, max_runs: usize) -> (LLVM::Program, usize) {
+    let mut runs: usize = 0;
     let mut new_prog: LLVM::Program = prog.clone();
 
     while runs < max_runs {

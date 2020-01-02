@@ -3,7 +3,7 @@ import sys
 import subprocess
 
 BAD_TESTS_DIRS = ['tests/bad']
-GOOD_TESTS_DIRS = ['tests/good']
+GOOD_TESTS_DIRS = ['tests/good', 'tests/students/good/basic']
 
 wrongs = []
 prog = sys.argv[1]
@@ -20,14 +20,17 @@ for t_dir in GOOD_TESTS_DIRS:
     for fpath in fpaths:
         result = subprocess.run([f"./{prog}", fpath], capture_output=True)
         if result.returncode != 0:
+            print(result.stderr)
             wrongs.append(fpath)
             continue
-        if 'good/core018' in fpath:
+        if os.path.isfile(fpath.replace('.lat', '.input')):
             continue
         with open(fpath.replace('.lat', '.output')) as output_f:
             exp = output_f.read().encode()
             result = subprocess.run(["lli", fpath.replace(".lat", ".bc")], capture_output=True)
             if exp != result.stdout:
+                print(exp)
+                print(result.stdout)
                 wrongs.append(fpath)
 
 if len(wrongs) != 0:

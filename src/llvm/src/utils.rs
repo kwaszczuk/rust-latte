@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use crate::instructions as LLVM;
 
-fn get_mappings<'a>() -> HashMap<&'a str, &'a str> {
-    [
+fn get_mappings<'a>() -> Vec<(&'a str, &'a str)> {
+    vec![
         ("\\\\", "\\5C"),
         ("\\b", "\\08"),
         ("\\f", "\\0C"),
         ("\\n", "\\0A"),
         ("\\t", "\\09"),
         ("\\\"", "\\22"),
-    ].iter().cloned().collect()
+    ]
 }
 
 pub fn escape_string(mut s: String) -> String {

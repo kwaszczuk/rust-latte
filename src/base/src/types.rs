@@ -26,3 +26,36 @@ impl From<&Location> for Span {
         Span::new(loc.begin as u32, loc.end as u32)
     }
 }
+
+pub trait Labeled {
+    fn new(prefix: String, counter: usize) -> Self;
+}
+
+pub struct Labeler<T: Labeled> {
+    pub prefix: String,
+    pub counter: usize,
+    dummy: T,
+}
+
+impl<T: Labeled> Labeler<T> {
+    pub fn new(prefix: String) -> Self {
+        Labeler {
+            prefix: prefix.clone(),
+            counter: 0,
+            dummy: T::new(prefix.clone(), 0),
+        }
+    }
+    pub fn set(&mut self, counter: usize) {
+        self.counter = counter;
+    }
+
+    pub fn reset(&mut self) {
+        self.set(0);
+    }
+
+    pub fn next(&mut self) -> T {
+        let ctr = self.counter.clone();
+        self.counter += 1;
+        T::new(self.prefix.clone(), ctr)
+    }
+}

@@ -1,6 +1,8 @@
+use std::collections::{HashMap};
 use crate::instructions as LLVM;
 use crate::operators::{Operator, ArithmOp, RelOp};
 use base::ast;
+use base::types::{Labeler};
 use base::symbol_table::{SymbolTable};
 use crate::utils::{length_after_escape, instructions_to_blocks};
 
@@ -21,35 +23,11 @@ impl SymbolTableEntity {
     }
 }
 
-struct Labeler {
-    prefix: String,
-    counter: usize
-}
-
-impl Labeler {
-    fn new(prefix: String) -> Self {
-        Labeler {
-            prefix: prefix,
-            counter: 0
-        }
-    }
-
-    fn reset(&mut self) {
-        self.counter = 0;
-    }
-
-    fn next(&mut self) -> String {
-        let label = format!("{}{}", self.prefix, self.counter);
-        self.counter += 1;
-        label
-    }
-}
-
 pub struct LLVMCompiler {
     symbol_table: SymbolTable<SymbolTableEntity>,
-    _label_generator: Labeler,
-    _register_generator: Labeler,
-    _static_generator: Labeler,
+    _label_generator: Labeler<LLVM::Label>,
+    _register_generator: Labeler<LLVM::Register>,
+    _static_generator: Labeler<LLVM::Static>,
     _instrs: Vec<LLVM::Instr>,
     _statics: Vec<(LLVM::Static, String)>,
     _current_block_label: LLVM::Label,
@@ -64,23 +42,20 @@ impl LLVMCompiler {
             _static_generator: Labeler::new("static_".to_string()),
             _instrs: vec![],
             _statics: vec![],
-            _current_block_label: LLVM::Label { name: "".to_string() },
+            _current_block_label: LLVM::Label::new("".to_string(), 0), // dummy
         }
     }
 
     fn next_label(&mut self) -> LLVM::Label {
-        let name = self._label_generator.next();
-        LLVM::Label { name }
+        self._label_generator.next()
     }
 
     fn next_register(&mut self) -> LLVM::Register {
-        let name = self._register_generator.next();
-        LLVM::Register { name }
+        self._register_generator.next()
     }
 
     fn next_static(&mut self) -> LLVM::Static {
-        let name = self._static_generator.next();
-        LLVM::Static { name }
+        self._static_generator.next()
     }
 
     fn clean_instrs(&mut self) {
@@ -194,7 +169,7 @@ impl LLVMCompiler {
                 f.name.to_string(),
                 SymbolTableEntity::new(
                     LLVM::Type::Fun { ret_ty: Box::new(f.ret_ty.clone()) },
-                    LLVM::Register { name: "".to_string() }
+                    LLVM::Register::new("".to_string(), 0), // dummy
                 ),
             );
         }
@@ -212,7 +187,7 @@ impl LLVMCompiler {
                 fn_def.ident.clone(),
                 SymbolTableEntity::new(
                     LLVM::Type::Fun { ret_ty: Box::new(LLVM::Type::from(&fn_def.ty)) },
-                    LLVM::Register { name: "".to_string() }
+                    LLVM::Register::new("".to_string(), 0), // dummy
                 ),
             );
         }
@@ -221,6 +196,7 @@ impl LLVMCompiler {
             functions.push(self.compile_function(&fn_def));
         }
         LLVM::Program {
+            options: HashMap::new(),
             declares: self.get_globals(),
             statics: self.get_statics(),
             functions: functions,
@@ -235,7 +211,7 @@ impl LLVMCompiler {
 
         let fn_ret_ty = LLVM::Type::from(&fn_def.ty);
         for (i, a) in fn_def.args.iter().enumerate() {
-            let arg_reg = LLVM::Register { name: format!("{}", i) };
+            let arg_reg = LLVM::Register::new("".to_string(), i);
             let new_reg = self.next_register();
             let arg_ty = LLVM::Type::from(&a.ty);
             self.symbol_table.insert(
@@ -302,8 +278,12 @@ impl LLVMCompiler {
                     let item_ty = LLVM::Type::from(ty.clone());
 
                     // allocate variable it
-                    self.add_instr(LLVM::Instr::Alloc {
+                    self._instrs.insert(0, LLVM::Instr::Alloc {
                         dest: (item_ty.clone(), item_reg.clone())
+                    });
+                    self._instrs.insert(1, LLVM::Instr::Store {
+                        src: (item_ty.clone(), LLVM::Type::default_value(&item_ty)),
+                        dest: (LLVM::Type::new_ptr(item_ty.clone()), item_reg.clone())
                     });
 
                     // calculate and assign variable initial value if needed

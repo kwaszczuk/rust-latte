@@ -22,6 +22,7 @@ impl Optimizer {
         }).collect();
 
         LLVM::Program {
+            options: prog.options.clone(),
             declares: prog.declares.clone(),
             statics: prog.statics.clone(),
             functions: new_functions,

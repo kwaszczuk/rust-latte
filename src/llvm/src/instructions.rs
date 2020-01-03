@@ -1,12 +1,31 @@
 use std::fmt;
-// use std::collections::{LinkedList};
+use std::collections::{HashMap};
 use crate::operators::{Operator};
 use crate::utils::{escape_string, length_after_escape};
 use base::ast;
+use base::types;
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct Register {
-    pub name: String
+    pub prefix: String,
+    pub counter: usize,
+    pub name: String,
+}
+
+impl Register {
+    pub fn new(prefix: String, counter: usize) -> Self {
+        Register {
+            prefix: prefix.clone(),
+            counter,
+            name: format!("{}{}", prefix.clone(), counter),
+        }
+    }
+}
+
+impl base::types::Labeled for Register {
+    fn new(prefix: String, counter: usize) -> Self {
+        Register::new(prefix, counter)
+    }
 }
 
 impl fmt::Display for Register {
@@ -17,12 +36,28 @@ impl fmt::Display for Register {
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct Label {
-    pub name: String
+    pub prefix: String,
+    pub counter: usize,
+    pub name: String,
 }
 
 impl Label {
+    pub fn new(prefix: String, counter: usize) -> Self {
+        Label {
+            prefix: prefix.clone(),
+            counter,
+            name: format!("{}{}", prefix.clone(), counter),
+        }
+    }
+
     pub fn is_entry(&self) -> bool {
-        self.name.as_str() == ""
+        self.prefix.as_str() == ""
+    }
+}
+
+impl base::types::Labeled for Label {
+    fn new(prefix: String, counter: usize) -> Self {
+        Label::new(prefix, counter)
     }
 }
 
@@ -34,7 +69,25 @@ impl fmt::Display for Label {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Static {
+    pub prefix: String,
+    pub counter: usize,
     pub name: String,
+}
+
+impl Static {
+    pub fn new(prefix: String, counter: usize) -> Self {
+        Static {
+            prefix: prefix.clone(),
+            counter,
+            name: format!("{}{}", prefix.clone(), counter),
+        }
+    }
+}
+
+impl base::types::Labeled for Static {
+    fn new(prefix: String, counter: usize) -> Self {
+        Static::new(prefix, counter)
+    }
 }
 
 impl fmt::Display for Static {
@@ -153,9 +206,7 @@ impl fmt::Display for Const {
             Int(value) => write!(f, "{}", value),
             True => write!(f, "true"),
             False => write!(f, "false"),
-            Null => {
-                panic!("no Display implementation for Null type")
-            },
+            Null => write!(f, "null"),
         }
     }
 }
@@ -358,6 +409,12 @@ pub struct Block {
     pub instrs: Vec<Instr>,
 }
 
+impl Block {
+    pub fn is_entry(&self) -> bool {
+        self.label.is_entry()
+    }
+}
+
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let instrs_strs: Vec<String> = self.instrs
@@ -401,6 +458,7 @@ impl fmt::Display for Function {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
+    pub options: HashMap<String, bool>,
     pub declares: Vec<Function>,
     pub statics: Vec<(Static, String)>,
     pub functions: Vec<Function>,
@@ -408,6 +466,12 @@ pub struct Program {
 
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut options: Vec<String> = self.options.iter().map(|(k, v)| {
+            format!(";     {}: {}", k, v)
+        }).collect();
+        options.sort();
+        options.insert(0, "; compilation options:".to_string());
+
         let declares: Vec<String> = self.declares.iter().map(|f| {
             let args: Vec<String> = f.args.iter().map(|a| a.to_string()).collect();
             let args_str = args.join(", ");
@@ -428,7 +492,8 @@ impl fmt::Display for Program {
 
         let functions: Vec<String> = self.functions.iter().map(|f| format!("{}", f)).collect();
         write!(
-            f, "{}\n\n{}\n\n{}",
+            f, "{}\n\n{}\n\n{}\n\n{}",
+            options.join("\n"),
             declares.join("\n"),
             statics.join("\n"),
             functions.join("\n\n"),

@@ -22,6 +22,7 @@ impl Optimizer {
         }).collect();
 
         LLVM::Program {
+            options: prog.options.clone(),
             declares: prog.declares.clone(),
             statics: prog.statics.clone(),
             functions: new_functions,
@@ -150,7 +151,7 @@ impl Optimizer {
     }
 
     fn optimize_value(&mut self, value: &LLVM::Value) -> LLVM::Value {
-        if let LLVM::Value::Register(LLVM::Register { name }) = value.clone() {
+        if let LLVM::Value::Register(LLVM::Register { prefix, counter, name }) = value.clone() {
             if let Some(new_val) = self.values.get(&name) {
                 return new_val.clone().into();
             }

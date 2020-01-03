@@ -1,3 +1,4 @@
+use std::fmt;
 use std::collections::{HashMap};
 use crate::instructions as LLVM;
 
@@ -21,6 +22,32 @@ impl ControlFlowGraph {
     }
 }
 
+impl From<&Vec<LLVM::Block>> for ControlFlowGraph {
+    fn from(blocks: &Vec<LLVM::Block>) -> Self {
+        generate_graph(blocks)
+    }
+}
+
+impl fmt::Display for ControlFlowGraph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut res = String::from("");
+        for (l, n) in &self.nodes {
+            res = format!("{}{}", res, n);
+        }
+        write!(f, "{}", res)
+    }
+}
+
+impl fmt::Display for CFGNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut res = format!("Node: {}\n", self.block.label.name);
+        for l in &self.nexts {
+            res = format!("{}  {} -> {}\n", res, self.block.label.name, l.name);
+        }
+        write!(f, "{}", res)
+    }
+}
+
 fn branches_to(block: &LLVM::Block) -> Vec<LLVM::Label> {
     use LLVM::Instr::*;
 
@@ -41,7 +68,6 @@ fn branches_to(block: &LLVM::Block) -> Vec<LLVM::Label> {
     }
     ret
 }
-
 
 pub fn generate_graph(blocks: &Vec<LLVM::Block>) -> ControlFlowGraph {
     let mut cfg = ControlFlowGraph::new();

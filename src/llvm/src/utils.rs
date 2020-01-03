@@ -37,7 +37,7 @@ pub fn length_after_escape(s: String) -> usize {
 pub fn instructions_to_blocks(instrs: &Vec<LLVM::Instr>) -> Vec<LLVM::Block> {
     let mut blocks = vec![];
     let mut current_block = LLVM::Block {
-        label: LLVM::Label { name: "".to_string() },
+        label: LLVM::Label::new("".to_string(), 0), // dummy
         instrs: vec![],
     };
 

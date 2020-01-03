@@ -6,12 +6,20 @@ ifeq ($(SILENT),1)
 	CFLAGS += --message-format short
 endif
 
-ifeq ($(PARSER_ONLY),1)
+ifeq ($(ANALYSIS),0)
   	CFLAGS += --features "no-analysis"
 endif
 
-ifeq ($(ANALYSIS_ONLY),1)
+ifeq ($(CODEGEN),0)
   	CFLAGS += --features "no-codegen"
+endif
+
+ifeq ($(MEM2REG),0)
+  	CFLAGS += --features "llvm/no-mem2reg"
+endif
+
+ifeq ($(OPTIMIZE),0)
+  	CFLAGS += --features "llvm/no-optimizations"
 endif
 
 build_x86 build_latc build_llvm:

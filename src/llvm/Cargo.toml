@@ -19,5 +19,6 @@ optimization-branches = []
 optimization-phis = []
 all-optimizations = []
 no-optimizations = []
+no-mem2reg = []
 
 default=["all-optimizations"]

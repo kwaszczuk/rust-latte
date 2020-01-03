@@ -67,7 +67,7 @@ impl fmt::Display for Label {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct Static {
     pub prefix: String,
     pub counter: usize,
@@ -176,7 +176,7 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum Const {
     Int(i32),
     True,
@@ -211,7 +211,7 @@ impl fmt::Display for Const {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum Value {
     Const(Const),
     Register(Register),

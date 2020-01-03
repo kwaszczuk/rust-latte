@@ -1,6 +1,7 @@
 mod unreachable_blocks;
 mod unreachable_instructions;
 mod unused_assignments;
+mod unused_statics_declares;
 
 use crate::optimizations::base::{Optimizer, apply_optimizers};
 use crate::optimizations::globals;
@@ -22,6 +23,7 @@ impl Optimizer for DeadCodeOptimizer {
             Box::new(unreachable_blocks::Optimizer::new()),
             Box::new(unreachable_instructions::Optimizer::new()),
             Box::new(unused_assignments::Optimizer::new()),
+            Box::new(unused_statics_declares::Optimizer::new()),
         ];
 
         let (new_prog, _runs) = apply_optimizers(prog, &mut optimizations, globals::MAX_OPTIMIZATION_ITERATIONS);

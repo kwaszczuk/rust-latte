@@ -134,7 +134,6 @@ fn get_dominator_tree(cfg: &ControlFlowGraph) -> DominatorTree {
     // every node always has some immediate dominator
     for (l, n) in &cfg.nodes {
         if !n.block.is_entry() {
-            let dom = dominator_tree.dominator_of(&l);
             if let None = dominator_tree.dominator_of(&l) {
                 assert!(false, format!("idom not found for {:?}", l));
             }

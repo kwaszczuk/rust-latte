@@ -1,6 +1,6 @@
 use base::ast;
 
-mod instructions;
+pub mod instructions;
 mod operators;
 mod compiler;
 mod utils;
@@ -21,8 +21,6 @@ use optimizations::dead_code::{DeadCodeOptimizer};
 use optimizations::branches::{BranchesOptimizer};
 use optimizations::phis::{PhisOptimizer};
 use optimizations::globals;
-use crate::control_flow_graph::{ControlFlowGraph, CFGNode};
-use crate::instructions as LLVM;
 
 pub fn compile(ast_tree: &ast::Program) -> instructions::Program {
     let mut prog = compiler::LLVMCompiler::run(&ast_tree);

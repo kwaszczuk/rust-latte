@@ -26,7 +26,7 @@ fn is_node_backward_reducible(node: &CFGNode, cfg: &ControlFlowGraph) -> bool {
     false
 }
 
-fn is_node_forward_reducible(node: &CFGNode, cfg: &ControlFlowGraph) -> bool {
+fn is_node_forward_reducible(node: &CFGNode, _cfg: &ControlFlowGraph) -> bool {
     node.nexts.len() == 1
 }
 

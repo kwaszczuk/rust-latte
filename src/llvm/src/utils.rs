@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::instructions as LLVM;
 
 fn get_mappings<'a>() -> Vec<(&'a str, &'a str)> {

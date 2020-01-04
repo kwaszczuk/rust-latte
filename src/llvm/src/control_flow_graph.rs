@@ -31,7 +31,7 @@ impl From<&Vec<LLVM::Block>> for ControlFlowGraph {
 impl fmt::Display for ControlFlowGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = String::from("");
-        for (l, n) in &self.nodes {
+        for (_, n) in &self.nodes {
             res = format!("{}{}", res, n);
         }
         write!(f, "{}", res)

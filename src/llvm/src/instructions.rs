@@ -3,7 +3,6 @@ use std::collections::{HashMap};
 use crate::operators::{Operator};
 use crate::utils::{escape_string, length_after_escape};
 use base::ast;
-use base::types;
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct Register {

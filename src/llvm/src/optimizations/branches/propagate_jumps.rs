@@ -5,7 +5,6 @@ use std::collections::{HashMap};
 
 use crate::instructions as LLVM;
 use crate::optimizations::base;
-use crate::utils::{blocks_to_instructions, instructions_to_blocks};
 
 pub struct Optimizer {
     jump_only_blocks: HashMap<LLVM::Label, (LLVM::Label, bool)>,

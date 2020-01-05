@@ -83,7 +83,7 @@ impl X86Compiler {
                     Arithm {
                         ty: DEFAULT_TYPE.clone(),
                         op: ArithmOp::Sub.into(),
-                        src: Value::Const(var_cnt * DEFAULT_WORD_SIZE),
+                        src: Value::Const(align(var_cnt * DEFAULT_WORD_SIZE, 16)),
                         dest: RSP.into()
                     },
                 ];
@@ -118,7 +118,7 @@ impl X86Compiler {
                 Arithm {
                     ty: DEFAULT_TYPE.clone(),
                     op: ArithmOp::Add.into(),
-                    src: Value::Const(var_cnt * DEFAULT_WORD_SIZE),
+                    src: Value::Const(align(var_cnt * DEFAULT_WORD_SIZE, 16)),
                     dest: RSP.into()
                 },
                 Pop { ty: DEFAULT_TYPE.clone(), dest: RBP.into() },
@@ -537,4 +537,8 @@ impl X86Compiler {
             instrs: new_instrs,
         }
     }
+}
+
+fn align(val: i32, align_to: i32) -> i32 {
+    (val + align_to - 1) / align_to * align_to
 }

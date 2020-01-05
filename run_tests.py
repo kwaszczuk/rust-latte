@@ -7,6 +7,7 @@ GOOD_TESTS_DIRS = ['tests/good', 'tests/students/good/basic']
 
 wrongs = []
 prog = sys.argv[1]
+opt = sys.argv[2]
 
 for t_dir in BAD_TESTS_DIRS:
     fpaths = sorted([ os.path.join(t_dir, f) for f in os.listdir(t_dir) ])
@@ -27,7 +28,10 @@ for t_dir in GOOD_TESTS_DIRS:
             continue
         with open(fpath.replace('.lat', '.output')) as output_f:
             exp = output_f.read().encode()
-            result = subprocess.run(["lli", fpath.replace(".lat", ".bc")], capture_output=True)
+            if opt == 'llvm':
+                result = subprocess.run(["lli", fpath.replace(".lat", ".bc")], capture_output=True)
+            elif opt == 'x86':
+                result = subprocess.run([fpath.replace(".lat", "")], capture_output=True)
             if exp != result.stdout:
                 wrongs.append(fpath)
 

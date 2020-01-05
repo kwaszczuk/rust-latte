@@ -9,9 +9,16 @@ base = { path = "src/base" }
 parser = { path = "src/parser" }
 analyzer = { path = "src/analyzer" }
 llvm = { path = "src/llvm" }
+x86 = { path = "src/x86", optional = true }
 
 [workspace]
-members = ["src/base", "src/parser", "src/parser/generate", "src/analyzer", "src/llvm"]
+members = [
+  "src/base",
+  "src/parser",
+  "src/analyzer",
+  "src/llvm",
+  "src/x86"
+]
 
 [[bin]]
 name = "latc"
@@ -20,7 +27,18 @@ path = "src/cli/src/main.rs"
 [[bin]]
 name = "latc_llvm"
 path = "src/cli/src/main.rs"
+required-features = ["emit-llvm"]
+
+[[bin]]
+name = "latc_x86_64"
+path = "src/cli/src/main.rs"
+required-features = ["emit-x86_64"]
 
 [features]
 no-analysis = []
 no-codegen = []
+emit-llvm = []
+emit-x86 = ["x86"]
+emit-x86_64 = ["x86"]
+
+default = []

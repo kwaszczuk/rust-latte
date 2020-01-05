@@ -1,9 +1,9 @@
 use base::ast;
 
 pub mod instructions;
-mod operators;
+pub mod operators;
 mod compiler;
-mod utils;
+pub mod utils;
 mod control_flow_graph;
 mod mem2reg;
 mod optimizations {

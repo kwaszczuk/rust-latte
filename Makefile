@@ -1,5 +1,5 @@
 .PHONY: all
-all: latc llvm
+all: llvm x86
 
 CFLAGS=--release
 ifeq ($(SILENT),1)
@@ -22,10 +22,19 @@ ifeq ($(OPTIMIZE),0)
   	CFLAGS += --features "llvm/no-optimizations"
 endif
 
-build_x86 build_latc build_llvm:
+.PHONY: llvm
+llvm: BINARY_NAME=latc_llvm
+llvm:
 	clang -S -emit-llvm lib/runtime.c -o lib/runtime.ll
 	llvm-as -o lib/runtime.bc lib/runtime.ll
-	cargo build $(CFLAGS) --bin $(BINARY_NAME) --all --exclude generate_parser
+	cargo build $(CFLAGS) --features "emit-llvm"
+	cp target/release/$(BINARY_NAME) .
+
+.PHONY: x86
+x86: BINARY_NAME=latc_x86_64
+x86:
+	clang -c -O3 lib/runtime.c -o lib/runtime.o
+	cargo build $(CFLAGS) --features "emit-x86_64"
 	cp target/release/$(BINARY_NAME) .
 
 parser:
@@ -33,15 +42,3 @@ parser:
 
 clean:
 	rm -rf target/ latc* lib/*.bc lib/*.ll
-
-.PHONY: x86
-x86: BINARY_NAME=latc_x86
-x86: build_x86
-
-.PHONY: llvm
-llvm: BINARY_NAME=latc_llvm
-llvm: build_llvm
-
-.PHONY: latc
-latc: BINARY_NAME=latc
-latc: build_latc

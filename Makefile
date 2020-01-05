@@ -29,6 +29,7 @@ llvm:
 	llvm-as -o lib/runtime.bc lib/runtime.ll
 	cargo build $(CFLAGS) --features "emit-llvm"
 	cp target/release/$(BINARY_NAME) .
+	cp target/release/latc .
 
 .PHONY: x86
 x86: BINARY_NAME=latc_x86_64
@@ -36,6 +37,7 @@ x86:
 	clang -c -O3 lib/runtime.c -o lib/runtime.o
 	cargo build $(CFLAGS) --features "emit-x86_64"
 	cp target/release/$(BINARY_NAME) .
+	cp target/release/latc .
 
 parser:
 	cargo build --release --message-format short --manifest-path src/parser/generate/Cargo.toml

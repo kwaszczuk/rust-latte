@@ -2,7 +2,7 @@ use std::collections::{HashMap};
 use std::collections::hash_map::Entry;
 use crate::instructions as X86;
 use llvm::instructions as LLVM;
-use crate::operators::{Operator, ArithmOp, RelOp};
+use crate::operators::{ArithmOp, RelOp};
 use base::types::{Labeler};
 
 use std::panic;
@@ -14,7 +14,6 @@ static DEFAULT_ARGS_OFFSET: i32 = 16;
 
 pub struct X86Compiler {
     label_generator: Labeler<X86::Label>,
-    static_generator: Labeler<X86::Static>,
     statics_map: HashMap<LLVM::Static, X86::Static>,
     registers_map: HashMap<LLVM::Register, X86::Storage>,
     labels_map: HashMap<LLVM::Label, X86::Label>,
@@ -27,7 +26,6 @@ impl X86Compiler {
     fn new() -> Self {
         X86Compiler {
             label_generator: Labeler::new("".to_string()),
-            static_generator: Labeler::new(".static.".to_string()),
             statics_map: HashMap::new(),
             labels_map: HashMap::new(),
             registers_map: HashMap::new(),
@@ -240,7 +238,6 @@ impl X86Compiler {
     }
 
     fn prepare_labels(&mut self, blocks: &Vec<LLVM::Block>) {
-        use LLVM::Instr::*;
         self.labels_map = HashMap::new();
         for b in blocks {
             if b.is_entry() && b.instrs.len() == 1 {
@@ -284,15 +281,6 @@ impl X86Compiler {
                     });
                     Register::RAX.clone().into()
                 }
-                LLVM::Value::Static(_) => {
-                    panic!("should not happen")
-                },
-            }
-        };
-        let cast_value_to_storage = |val: &LLVM::Value| -> X86::Storage {
-            match val {
-                LLVM::Value::Register(r) => replace_register(r.clone()).into(),
-                LLVM::Value::Const(_) |
                 LLVM::Value::Static(_) => {
                     panic!("should not happen")
                 },

@@ -505,7 +505,6 @@ impl fmt::Display for Program {
         ];
 
         let statics: Vec<String> = self.statics.iter().map(|(name, value)| {
-            let escaped_str = unescape_string(value.clone());
             format!("{}:\n\t.string \"{}\"", name, value)
         }).collect();
 

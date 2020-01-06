@@ -6,7 +6,7 @@ use crate::utils::{blocks_to_instructions, instructions_to_blocks};
 use crate::operators::{Operator, ArithmOp, RelOp};
 
 pub struct Optimizer {
-    values: HashMap<String, LLVM::Const>
+    values: HashMap<String, LLVM::Value>
 }
 
 impl Optimizer {
@@ -116,7 +116,7 @@ impl Optimizer {
                             },
                             _ => { panic!("should not happen"); }
                         };
-                        self.values.insert(dest_reg.name.clone(), new_val.into());
+                        self.values.insert(dest_reg.name.clone(), LLVM::Value::Const(new_val.into()));
                     }
 
                     new_instr = Compare {
@@ -155,19 +155,54 @@ impl Optimizer {
                     let new_val_lhs = self.optimize_value(&val_lhs);
                     let new_val_rhs = self.optimize_value(&val_rhs);
                     use LLVM::Const::*;
-
-                    if let (LLVM::Value::Const(Int(i1)), LLVM::Value::Const(Int(i2))) = (new_val_lhs.clone(), new_val_rhs.clone()) {
+                    {
                         use Operator::*;
                         use ArithmOp::*;
-                        let new_val = match op {
-                            Arithm(Add) => i1 + i2,
-                            Arithm(Sub) => i1 - i2,
-                            Arithm(Mul) => i1 * i2,
-                            Arithm(Div) => i1 / i2,
-                            Arithm(Mod) => i1 % i2,
-                            _ => { panic!("should not happen"); }
-                        };
-                        self.values.insert(dest.1.name.clone(), new_val.into());
+
+                        match (op.clone(), new_val_lhs.clone(), new_val_rhs.clone()) {
+                            (Arithm(Mul), LLVM::Value::Const(Int(0)), _) |
+                            (Arithm(Mul), _, LLVM::Value::Const(Int(0))) |
+                            (Arithm(Div), LLVM::Value::Const(Int(0)), _) |
+                            (Arithm(Mod), LLVM::Value::Const(Int(0)), _) |
+                            (Arithm(Mod), _, LLVM::Value::Const(Int(1))) => {
+                                self.values.insert(dest.1.name.clone(), LLVM::Value::Const(0.into()));
+                            },
+
+                            (Arithm(Sub), LLVM::Value::Const(Int(0)), LLVM::Value::Const(Int(x))) => {
+                                self.values.insert(dest.1.name.clone(), LLVM::Value::Const((-x).into()));
+                            },
+
+                            (Arithm(Add), LLVM::Value::Const(Int(0)), x) |
+                            (Arithm(Add), x, LLVM::Value::Const(Int(0))) |
+                            (Arithm(Sub), x, LLVM::Value::Const(Int(0))) |
+                            (Arithm(Mul), LLVM::Value::Const(Int(1)), x) |
+                            (Arithm(Mul), x, LLVM::Value::Const(Int(1))) | 
+                            (Arithm(Div), x, LLVM::Value::Const(Int(1))) => {
+                                self.values.insert(dest.1.name.clone(), x);
+                            },
+
+                            (Arithm(Add), LLVM::Value::Const(Int(x)), LLVM::Value::Const(Int(y))) => {
+                                self.values.insert(dest.1.name.clone(), LLVM::Value::Const((x + y).into()));
+                            },
+
+                            (Arithm(Sub), LLVM::Value::Const(Int(x)), LLVM::Value::Const(Int(y))) => {
+                                self.values.insert(dest.1.name.clone(), LLVM::Value::Const((x - y).into()));
+                            },
+
+                            (Arithm(Mul), LLVM::Value::Const(Int(x)), LLVM::Value::Const(Int(y))) => {
+                                self.values.insert(dest.1.name.clone(), LLVM::Value::Const((x * y).into()));
+                            },
+
+                            (Arithm(Div), LLVM::Value::Const(Int(x)), LLVM::Value::Const(Int(y))) => {
+                                self.values.insert(dest.1.name.clone(), LLVM::Value::Const((x / y).into()));
+                            },
+
+                            (Arithm(Mod), LLVM::Value::Const(Int(x)), LLVM::Value::Const(Int(y))) => {
+                                self.values.insert(dest.1.name.clone(), LLVM::Value::Const((x % y).into()));
+                            },
+                            
+                            _ => {},
+                        }
                     }
 
                     new_instr = Arithm {

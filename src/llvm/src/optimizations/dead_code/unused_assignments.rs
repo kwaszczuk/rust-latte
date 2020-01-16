@@ -53,10 +53,11 @@ impl Optimizer {
             match i {
                 Alloc { dest } |
                 Load { src: _, dest } |
-                Store { src: _, dest } |
+                GetElementPtr { dest, src: _, args: _ } |
                 Phi { dest, preds: _ } |
                 Arithm { dest, op: _, val_lhs: _, val_rhs: _ } |
-                GetElementPtr { dest, src: _, idx1: _, idx2: _ } => {
+                Sext { dest, .. } |
+                Bitcast { dest, .. } => {
                     if let Some(_) = self.used_registers.get(&dest.1) {
                     } else {
                         // ignore this instruction
@@ -93,6 +94,7 @@ impl Optimizer {
                 Unreachable |
                 Branch(_) |
                 Label { val: _, preds: _ } |
+                Store { .. } |
                 Return { ty: _, val: _ } => {
                 },
             }
@@ -113,10 +115,18 @@ impl Optimizer {
                         self.used_registers.insert(src.1.clone(), true);
                     },
 
-                    Store { src, dest: _ }  => {
+                    Sext { src, .. } |
+                    Bitcast { src, .. } => {
                         if let LLVM::Value::Register(r) = src.1.clone() {
                             self.used_registers.insert(r.clone(), true);
                         }
+                    },
+
+                    Store { src, dest }  => {
+                        if let LLVM::Value::Register(r) = src.1.clone() {
+                            self.used_registers.insert(r.clone(), true);
+                        }
+                        self.used_registers.insert(dest.1.clone(), true);
                     },
 
                     Arithm { dest: _, op: _, val_lhs, val_rhs } |
@@ -137,15 +147,14 @@ impl Optimizer {
                         }
                     }
 
-                    GetElementPtr { dest: _, src, idx1, idx2 } => {
+                    GetElementPtr { dest: _, src, args } => {
                         if let LLVM::Value::Register(r) = src.1.clone() {
                             self.used_registers.insert(r.clone(), true);
                         }
-                        if let LLVM::Value::Register(r) = idx1.1.clone() {
-                            self.used_registers.insert(r.clone(), true);
-                        }
-                        if let LLVM::Value::Register(r) = idx2.1.clone() {
-                            self.used_registers.insert(r.clone(), true);
+                        for idx in args {
+                            if let LLVM::Value::Register(r) = idx.1.clone() {
+                                self.used_registers.insert(r.clone(), true);
+                            }
                         }
                     },
 

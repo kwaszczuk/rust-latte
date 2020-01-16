@@ -8,7 +8,8 @@ pub enum SimpleType {
     Int,
     Str,
     Bool,
-    Void
+    Void,
+    Array(Box<SimpleType>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -25,6 +26,7 @@ impl fmt::Display for SimpleType {
             Str => write!(f, "string"),
             Bool => write!(f, "boolean"),
             Void => write!(f, "void"),
+            Array(t) => write!(f, "{}[]", t),
         }
     }
 }
@@ -50,6 +52,7 @@ impl VarType {
                 },
 
                 VarType::Simple(SimpleType::Void)
+              | VarType::Simple(SimpleType::Array(_))
               | VarType::Fun(_) => false,
             },
 
@@ -60,6 +63,7 @@ impl VarType {
                     VarType::Simple(SimpleType::Bool)
                   | VarType::Simple(SimpleType::Str)
                   | VarType::Simple(SimpleType::Void)
+                  | VarType::Simple(SimpleType::Array(_))
                   | VarType::Fun(_) => false,
                 },
 
@@ -69,6 +73,7 @@ impl VarType {
                     VarType::Simple(SimpleType::Bool)
                   | VarType::Simple(SimpleType::Str)
                   | VarType::Simple(SimpleType::Void)
+                  | VarType::Simple(SimpleType::Array(_))
                   | VarType::Fun(_) => false,
                 },
 
@@ -78,6 +83,7 @@ impl VarType {
                     VarType::Simple(SimpleType::Bool)
                   | VarType::Simple(SimpleType::Str)
                   | VarType::Simple(SimpleType::Void)
+                  | VarType::Simple(SimpleType::Array(_))
                   | VarType::Fun(_) => false,
                 },
 
@@ -87,6 +93,7 @@ impl VarType {
 
                     VarType::Simple(SimpleType::Void)
                   | VarType::Simple(SimpleType::Bool)
+                  | VarType::Simple(SimpleType::Array(_))
                   | VarType::Fun(_) => false,
                 },
 
@@ -96,6 +103,7 @@ impl VarType {
                     VarType::Simple(SimpleType::Bool)
                   | VarType::Simple(SimpleType::Str)
                   | VarType::Simple(SimpleType::Void)
+                  | VarType::Simple(SimpleType::Array(_))
                   | VarType::Fun(_) => false,
                 },
             },
@@ -124,18 +132,14 @@ impl From<&ast::Type> for SimpleType {
             ast::Type::Str => SimpleType::Str,
             ast::Type::Bool => SimpleType::Bool,
             ast::Type::Void => SimpleType::Void,
+            ast::Type::Array(t) => SimpleType::Array(Box::new(SimpleType::from(&*t.clone()))),
         }
     }
 }
 
 impl From<&ast::Type> for VarType {
     fn from(v: &ast::Type) -> Self {
-        match v {
-            ast::Type::Int => VarType::Simple(SimpleType::Int),
-            ast::Type::Str => VarType::Simple(SimpleType::Str),
-            ast::Type::Bool => VarType::Simple(SimpleType::Bool),
-            ast::Type::Void => VarType::Simple(SimpleType::Void),
-        }
+        VarType::Simple(SimpleType::from(v))
     }
 }
 

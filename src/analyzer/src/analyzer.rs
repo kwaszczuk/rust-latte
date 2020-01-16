@@ -358,21 +358,18 @@ impl SemanticAnalyzer {
                 }
             },
 
-            Ass { ident, ident_loc, expr } => {
-                if throw_if_undeclared!(self, ident, ident_loc) { return; }
-                let var = self.symbol_table.get(&ident).unwrap();
-
-                analyse_expr_and_match_type![self, &expr, var.ty, expr.all_loc];
+            Ass { lval, expr } => {
+                if let Ok(lval_ty) = self.analyse_lvalue(&lval) {
+                    analyse_expr_and_match_type![self, &expr, lval_ty, expr.all_loc];
+                }
             },
 
-            Incr { ident, ident_loc } |
-            Decr { ident, ident_loc } => {
-                if throw_if_undeclared!(self, ident, ident_loc) { return; }
-
-                let var = self.symbol_table.get(&ident).unwrap();
-                let exp_ty = VarType::Simple(SimpleType::Int);
-
-                throw_if_unmatched_type!(self, exp_ty, var.ty, ident_loc);
+            Incr { lval } |
+            Decr { lval } => {
+                if let Ok(lval_ty) = self.analyse_lvalue(&lval) {
+                    let exp_ty = VarType::Simple(SimpleType::Int);
+                    throw_if_unmatched_type!(self, exp_ty, lval_ty, lval.all_loc);
+                }
             },
 
             Ret { ret_loc, value } => {
@@ -439,8 +436,61 @@ impl SemanticAnalyzer {
                 self.symbol_table.end_scope();
             },
 
+            ForEach { ty, ty_loc, ident, ident_loc, expr, block } => {
+                let elem_ty = SimpleType::from(ty);
+                let exp_arr_ty = VarType::Simple(SimpleType::Array(Box::new(elem_ty.clone())));
+                analyse_expr_and_match_type![self, &expr, exp_arr_ty, expr.all_loc];
+
+                self.symbol_table.begin_scope();
+                self.symbol_table.insert(
+                    ident.clone(),
+                    SymbolTableEntity::new(
+                        VarType::Simple(elem_ty.clone()),
+                        ty_loc.clone(),
+                        ident_loc.clone()
+                    )
+                );
+                self.analyse_block(&block);
+                self.symbol_table.end_scope();
+            },
+
             SExp { expr } => {
-                self.analyse_expression(&expr);
+                let _ = self.analyse_expression(&expr);
+            },
+        }
+    }
+
+    fn analyse_lvalue(&mut self, lval: &ast::LValue) -> Result<VarType, ()> {
+        use ast::LValueTypes::*;
+        use VarType::*;
+        use SimpleType::*;
+
+        match &lval.value {
+            Var { ident, ident_loc } => {
+                if throw_if_undeclared!(self, ident, ident_loc) { return Err(()); }
+                let var = self.symbol_table.get(&ident).unwrap();
+                Ok(var.ty.clone())
+            },
+
+            ArrAt { arr_expr, idx_expr } => {
+                let exp_idx_ty = Simple(Int);
+                analyse_expr_and_match_type![self, idx_expr, exp_idx_ty, idx_expr.all_loc];
+
+                if let Ok(ty) = self.analyse_expression(&arr_expr) {
+                    match ty {
+                        Simple(Array(elem_ty)) => {
+                            return Ok(VarType::Simple(*elem_ty.clone()))
+                        },
+                        _ => {
+                            self.throw(TypeError(NotAnArray {
+                                ty: ty.clone(),
+                                loc: arr_expr.all_loc.clone(),
+                            }));
+                        },
+                    };
+                }
+
+                Err(())
             },
         }
     }
@@ -544,13 +594,6 @@ impl SemanticAnalyzer {
                 Err(())
             },
 
-            EVar { ident, ident_loc } => {
-                if throw_if_undeclared!(self, ident, ident_loc) {
-                    return Err(())
-                }
-                Ok(self.symbol_table.get(&ident).unwrap().ty)
-            },
-
             ELitInt { value } => {
                 match value.parse::<i32>() {
                     Ok(_) => {},
@@ -600,6 +643,33 @@ impl SemanticAnalyzer {
                         Err(())
                     }
                 }
+            },
+
+            ELValue { lval } => {
+                self.analyse_lvalue(&lval)
+            },
+
+
+            ENew { ty, ty_loc: _, len_expr } => {
+                let exp_ty = Simple(Int);
+                analyse_expr_and_match_type![self, len_expr, exp_ty, len_expr.all_loc];
+                Ok(Simple(SimpleType::from(ty)))
+            },
+
+            EArrLen { arr_expr } => {
+                if let Ok(ty) = self.analyse_expression(&arr_expr) {
+                    match ty {
+                        Simple(Array(_)) => {},
+                        _ => {
+                            self.throw(TypeError(NotAnArray {
+                                ty: ty.clone(),
+                                loc: arr_expr.all_loc.clone(),
+                            }));
+                        },
+                    };
+                }
+
+                Ok(Simple(Int))
             },
 
             EString { value: _ } => Ok(Simple(Str)),

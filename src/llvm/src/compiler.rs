@@ -2,7 +2,7 @@ use std::collections::{HashMap};
 use crate::instructions as LLVM;
 use crate::operators::{Operator, ArithmOp, RelOp};
 use base::ast;
-use base::types::{Labeler};
+use base::types::{Labeler, Location};
 use base::symbol_table::{SymbolTable};
 use crate::utils::{length_after_escape, instructions_to_blocks};
 
@@ -152,6 +152,15 @@ impl LLVMCompiler {
                 args: vec![
                     LLVM::Type::new_ptr(LLVM::Type::Int8),
                     LLVM::Type::new_ptr(LLVM::Type::Int8),
+                ],
+                body: vec![],
+            },
+            LLVM::Function {
+                ret_ty: LLVM::Type::new_ptr(LLVM::Type::Int8),
+                name: "calloc".into(),
+                args: vec![
+                    LLVM::Type::Int64,
+                    LLVM::Type::Int64,
                 ],
                 body: vec![],
             },
@@ -316,21 +325,21 @@ impl LLVMCompiler {
                 }
             },
 
-            Ass { ident, ident_loc: _, expr } => {
-                let var = self.symbol_table.get(&ident).unwrap();
+            Ass { lval, expr } => {
+                let (lval_ty, lval_reg) = self.compile_lvalue(&lval);
                 let (expr_ty, expr_val) = self.compile_expression(&expr);
                 self.add_instr(LLVM::Instr::Store {
                     src: (expr_ty.clone(), expr_val.clone()),
-                    dest: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
+                    dest: (lval_ty.clone(), lval_reg.clone())
                 });
             },
 
-            Incr { ident, ident_loc: _ } => {
-                self.compile_incr_decr(&ident, ArithmOp::Add);
+            Incr { lval } => {
+                self.compile_incr_decr(&lval, ArithmOp::Add);
             }
 
-            Decr { ident, ident_loc: _ } => {
-                self.compile_incr_decr(&ident, ArithmOp::Sub);
+            Decr { lval } => {
+                self.compile_incr_decr(&lval, ArithmOp::Sub);
             },
 
             Ret { value, ret_loc: _ } => {
@@ -424,31 +433,132 @@ impl LLVMCompiler {
                 self.add_instr(continue_block_label.into());
             },
 
+            ForEach { ty, ident, expr, block, .. } => {
+                let (arr_ty, arr_val) = self.compile_expression(&expr);
+                let (_len_ty, arr_len_reg) = self.compile_array_length(
+                    (&arr_ty.clone(), &arr_val.clone())
+                );
+
+                let previous_block_label = self._current_block_label.clone();
+                let conditional_block_label = self.next_label();
+                let loop_block_label = self.next_label();
+                let continue_block_label = self.next_label();
+
+                self.add_instr(LLVM::Branch::Direct {
+                    label: conditional_block_label.clone(),
+                }.into());
+                self.add_instr(conditional_block_label.clone().into());
+
+                let idx_reg = self.next_register();
+                let idx_inc_reg = self.next_register();
+                self.add_instr(LLVM::Instr::Phi {
+                    dest: (LLVM::Type::Int32, idx_reg.clone()),
+                    preds: vec![
+                        (LLVM::Const::from(0).into(), previous_block_label.clone()),
+                        (idx_inc_reg.clone().into(), loop_block_label.clone()),
+                    ],
+                });
+
+                self.add_instr(LLVM::Instr::Arithm {
+                    dest: (LLVM::Type::Int32, idx_inc_reg.clone()),
+                    op: ArithmOp::Add.into(),
+                    val_lhs: idx_reg.clone().into(),
+                    val_rhs: LLVM::Const::from(1).into(),
+                });
+
+                let cmp_reg = self.next_register();
+                self.add_instr(LLVM::Instr::Compare {
+                    dest_reg: cmp_reg.clone(),
+                    op: RelOp::LT.into(),
+                    ty: LLVM::Type::Int32,
+                    val_lhs: idx_reg.clone().into(),
+                    val_rhs: arr_len_reg.clone().into(),
+                });
+
+                self.add_instr(LLVM::Branch::Conditional {
+                    ty: LLVM::Type::Int1,
+                    val: cmp_reg.clone().into(),
+                    true_label: loop_block_label.clone(),
+                    false_label: continue_block_label.clone(),
+                }.into());
+
+                self.add_instr(loop_block_label.into());
+                self.symbol_table.begin_scope();
+                {
+                    // read iterator value
+                    let (entry_ty, entry_reg) = self.compile_array_at(
+                        (&arr_ty.clone(), &arr_val.clone()),
+                        &idx_reg.clone().into()
+                    );
+                    self.symbol_table.insert(
+                        ident.clone(),
+                        SymbolTableEntity::new(
+                            arr_ty.deref_ptr().unwrap().clone(),
+                            entry_reg.clone()
+                        )
+                    );
+
+                    // process ForEach body
+                    self.compile_block(&block);
+                }
+                self.symbol_table.end_scope();
+
+                self.add_instr(LLVM::Branch::Direct {
+                    label: conditional_block_label.clone(),
+                }.into());
+                self.add_instr(continue_block_label.into());
+            },
+
             SExp { expr } => {
                 self.compile_expression(&expr);
             },
         }
     }
 
-    fn compile_incr_decr(&mut self, ident: &String, op: ArithmOp) {
-        let var = self.symbol_table.get(&ident).unwrap();
+    fn compile_lvalue(&mut self, lval: &ast::LValue) -> (LLVM::Type, LLVM::Register) {
+        use ast::LValueTypes::*;
+
+        match &lval.value {
+            Var { ident, ident_loc: _ } => {
+                let var = self.symbol_table.get(&ident).unwrap();
+                (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
+            },
+
+            ArrAt { arr_expr, idx_expr } => {
+                let (_idx_ty, idx_val) = self.compile_expression(&idx_expr);
+                let (arr_ty, arr_ptr) = self.compile_expression(&arr_expr);
+
+                let (entry_ty, entry_ptr_reg) = self.compile_array_at(
+                    (&arr_ty.clone(), &arr_ptr.clone()),
+                    &idx_val,
+                );
+
+                (arr_ty.clone(), entry_ptr_reg)
+            },
+        }
+    }
+
+    fn compile_incr_decr(&mut self, lval: &ast::LValue, op: ArithmOp) {
+        let (var_ty, var_reg) = self.compile_lvalue(lval);
+
+        let load_ty = var_ty.deref_ptr().unwrap();
         let load_reg = self.next_register();
         self.add_instr(LLVM::Instr::Load {
-            dest: (var.ty.clone(), load_reg.clone()),
-            src: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
+            dest: (load_ty.clone(), load_reg.clone()),
+            src: (var_ty.clone(), var_reg.clone())
         });
 
         let incr_reg = self.next_register();
         self.add_instr(LLVM::Instr::Arithm {
-            dest: (var.ty.clone(), incr_reg.clone()),
+            dest: (load_ty.clone(), incr_reg.clone()),
             op: op.into(),
-            val_lhs: load_reg.into(),
+            val_lhs: load_reg.clone().into(),
             val_rhs: LLVM::Const::from(1).into()
         });
 
         self.add_instr(LLVM::Instr::Store {
-            src: (var.ty.clone(), incr_reg.into()),
-            dest: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
+            src: (load_ty.clone(), incr_reg.into()),
+            dest: (var_ty.clone(), var_reg.clone())
         });
     }
 
@@ -648,16 +758,16 @@ impl LLVMCompiler {
                 (LLVM::Type::Int1, ret_reg.clone().into())
             },
 
-            EVar { ident, ident_loc: _ } => {
-                let var = self.symbol_table.get(&ident).unwrap();
+            ELValue { lval } => {
+                let (lval_ty, lval_reg) = self.compile_lvalue(&lval);
                 let load_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Load {
-                    dest: (var.ty.clone(), load_reg.clone()),
-                    src: (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone()),
+                    dest: (lval_ty.deref_ptr().unwrap(), load_reg.clone()),
+                    src: (lval_ty.clone(), lval_reg.clone()),
                 });
-
-                (var.ty.clone(), load_reg.clone().into())
+                (lval_ty.deref_ptr().unwrap(), load_reg.clone().into())
             },
+
 
             ELitInt { value } => {
                 (LLVM::Type::Int32, LLVM::Const::from(value.parse::<i32>().unwrap()).into())
@@ -712,12 +822,132 @@ impl LLVMCompiler {
                 self.add_instr(LLVM::Instr::GetElementPtr {
                     dest: (arr.clone(), ret_reg.clone()),
                     src: (LLVM::Type::new_ptr(arr.clone()), str_reg.into()),
-                    idx1: (LLVM::Type::Int32, LLVM::Const::from(0).into()),
-                    idx2: (LLVM::Type::Int32, LLVM::Const::from(0).into()),
+                    args: vec![
+                        (LLVM::Type::Int32, LLVM::Const::from(0).into()),
+                        (LLVM::Type::Int32, LLVM::Const::from(0).into()),
+                    ],
                 });
 
                 (LLVM::Type::new_ptr(LLVM::Type::Int8), ret_reg.into())
             },
+
+
+            ENew { ty, ty_loc: _, len_expr } => {
+                let arr_ty: LLVM::Type = ty.into();
+                let entry_ty = arr_ty.deref_ptr().unwrap();
+                let (_, len_val) = self.compile_expression(&len_expr);
+
+                let total_len_i32 = self.next_register();
+                self.add_instr(LLVM::Instr::Arithm {
+                    dest: (LLVM::Type::Int32, total_len_i32.clone()),
+                    op: ArithmOp::Add.into(),
+                    val_lhs: len_val.clone().into(),
+                    val_rhs: LLVM::Const::from(LLVM::ARRAY_LENGTH_TYPE.byte_size()).into(),
+                });
+
+                // calloc requires i64 arguments
+                let total_len_i64 = self.next_register();
+                self.add_instr(LLVM::Instr::Sext {
+                    dest: (LLVM::Type::Int64, total_len_i64.clone()),
+                    src: (LLVM::Type::Int32, total_len_i32.clone().into()),
+                });
+
+                // create array
+                let arr_ptr_i8 = self.next_register();
+                self.add_instr(LLVM::Instr::Call {
+                    dest_reg: Some(arr_ptr_i8.clone()),
+                    ret_ty: LLVM::Type::new_ptr(LLVM::Type::Int8),
+                    name: "calloc".to_string(),
+                    args: vec![
+                        (LLVM::Type::Int64, total_len_i64.clone().into()),
+                        (LLVM::Type::Int64, entry_ty.byte_size().into()),
+                    ],
+                });
+
+                let arr_ptr_i32 = self.next_register();
+                self.add_instr(LLVM::Instr::Bitcast {
+                    dest: (LLVM::Type::new_ptr(LLVM::Type::Int32), arr_ptr_i32.clone()),
+                    src: (LLVM::Type::new_ptr(LLVM::Type::Int8), arr_ptr_i8.clone().into()),
+                });
+
+                // save length of an array
+                // length field is at the beginning on the array so
+                // `getelementptr` is redundant
+                self.add_instr(LLVM::Instr::Store {
+                   dest: (LLVM::Type::new_ptr(LLVM::Type::Int32), arr_ptr_i32.clone()),
+                   src: (LLVM::Type::Int32, len_val.into()),
+                });
+
+                let arr_ptr = self.next_register();
+                self.add_instr(LLVM::Instr::Bitcast {
+                    dest: (arr_ty.clone(), arr_ptr.clone()),
+                    src: (LLVM::Type::new_ptr(LLVM::Type::Int8), arr_ptr_i8.clone().into()),
+                });
+
+
+                (arr_ty.clone(), arr_ptr.into())
+            },
+
+            EArrLen { arr_expr } => {
+                let (arr_ty, arr_ptr) = self.compile_expression(&arr_expr);
+                let (len_ty, len_reg) = self.compile_array_length((&arr_ty, &arr_ptr.into()));
+
+                (len_ty, len_reg.into())
+            },
         }
+    }
+
+    fn compile_array_at(&mut self, (arr_ty, arr_ptr): (&LLVM::Type, &LLVM::Value), idx: &LLVM::Value) -> (LLVM::Type, LLVM::Register) {
+            let arr_ptr_i8 = self.next_register();
+            self.add_instr(LLVM::Instr::Bitcast {
+                dest: (LLVM::Type::new_ptr(LLVM::DEFAULT_ARRAY_TYPE.clone()), arr_ptr_i8.clone()),
+                src: (arr_ty.clone(), arr_ptr.clone()),
+            });
+
+            // skip length field
+            let data_ptr_i8 = self.next_register();
+            self.add_instr(LLVM::Instr::GetElementPtr {
+                dest: (LLVM::DEFAULT_ARRAY_TYPE.clone(), data_ptr_i8.clone()),
+                src: (LLVM::Type::new_ptr(LLVM::DEFAULT_ARRAY_TYPE.clone()), arr_ptr_i8.clone().into()),
+                args: vec![
+                    (LLVM::Type::Int32, LLVM::ARRAY_LENGTH_TYPE.byte_size().into()),
+                ],
+            });
+
+            // array data pointer of proper type
+            let data_ptr = self.next_register();
+            self.add_instr(LLVM::Instr::Bitcast {
+                dest: (arr_ty.clone(), data_ptr.clone()),
+                src: (LLVM::Type::new_ptr(LLVM::DEFAULT_ARRAY_TYPE.clone()), data_ptr_i8.clone().into()),
+            });
+
+            let entry_ptr_reg = self.next_register();
+            self.add_instr(LLVM::Instr::GetElementPtr {
+                dest: (arr_ty.deref_ptr().unwrap(), entry_ptr_reg.clone()),
+                src: (arr_ty.clone(), data_ptr.clone().into()),
+                args: vec![
+                    (LLVM::Type::Int32, idx.clone()),
+                ],
+            });
+
+            (arr_ty.clone(), entry_ptr_reg)
+    }
+
+    fn compile_array_length(&mut self, (arr_ty, arr_ptr): (&LLVM::Type, &LLVM::Value)) -> (LLVM::Type, LLVM::Register) {
+            let arr_ptr_i32 = self.next_register();
+            self.add_instr(LLVM::Instr::Bitcast {
+                dest: (LLVM::Type::new_ptr(LLVM::Type::Int32), arr_ptr_i32.clone()),
+                src: (arr_ty.clone(), arr_ptr.clone().into()),
+            });
+
+            // length field is at the beginning on the array so
+            // `getelementptr` is redundant
+            let arr_len_reg = self.next_register();
+            self.add_instr(LLVM::Instr::Load {
+                dest: (LLVM::Type::Int32, arr_len_reg.clone()),
+                src: (LLVM::Type::new_ptr(LLVM::Type::Int32), arr_ptr_i32.clone().into()),
+            });
+
+            (LLVM::Type::Int32, arr_len_reg.clone())
     }
 }

@@ -1,0 +1,6 @@
+int main() {
+  int a = "123".length,
+      b = 1.length,
+      c = true.length;
+  return 0;
+}

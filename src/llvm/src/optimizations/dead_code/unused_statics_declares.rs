@@ -51,10 +51,11 @@ impl Optimizer {
                             }
                         }
 
-                        GetElementPtr { dest: _, src, idx1, idx2 } => {
+                        GetElementPtr { dest: _, src, args } => {
                             self.used_values.insert(src.1.clone());
-                            self.used_values.insert(idx1.1.clone());
-                            self.used_values.insert(idx2.1.clone());
+                            for idx in args {
+                                self.used_values.insert(idx.1.clone());
+                            }
                         },
 
                         Call { dest_reg: _, ret_ty: _, name, args } => {
@@ -77,7 +78,10 @@ impl Optimizer {
                         // we can ignore `src` here as it's a register and
                         // anyway we will only look on statics
                         Load { src: _, dest: _ } |
-                        Store { src: _, dest: _ } => {
+                        Store { src: _, dest: _ } |
+                        // `sext` and `bitcast` won't work with statics, so ignore them
+                        Sext { .. } |
+                        Bitcast { .. } => {
                         }
                     }
                 }

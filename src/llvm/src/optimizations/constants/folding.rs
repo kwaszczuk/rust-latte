@@ -55,7 +55,8 @@ impl Optimizer {
                 Unreachable |
                 Load { src: _, dest: _ } |
                 Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } => {
+                Label { val: _, preds: _ } |
+                Bitcast { .. } => {
                     new_instr = i.clone();
                 },
 
@@ -63,6 +64,17 @@ impl Optimizer {
                     let new_val = self.optimize_value(&src.1);
                     new_instr = Store {
                         src: (src.0, new_val),
+                        dest,
+                    };
+                },
+
+                Sext { src, dest } => {
+                    let new_val = self.optimize_value(&src.1);
+                    if let LLVM::Value::Const(_) = new_val {
+                        self.values.insert(dest.1.name.clone(), new_val.clone());
+                    }
+                    new_instr = Sext {
+                        src: (src.0, new_val.clone()),
                         dest,
                     };
                 },
@@ -176,7 +188,7 @@ impl Optimizer {
                             (Arithm(Add), x, LLVM::Value::Const(Int(0))) |
                             (Arithm(Sub), x, LLVM::Value::Const(Int(0))) |
                             (Arithm(Mul), LLVM::Value::Const(Int(1)), x) |
-                            (Arithm(Mul), x, LLVM::Value::Const(Int(1))) | 
+                            (Arithm(Mul), x, LLVM::Value::Const(Int(1))) |
                             (Arithm(Div), x, LLVM::Value::Const(Int(1))) => {
                                 self.values.insert(dest.1.name.clone(), x);
                             },
@@ -200,7 +212,7 @@ impl Optimizer {
                             (Arithm(Mod), LLVM::Value::Const(Int(x)), LLVM::Value::Const(Int(y))) => {
                                 self.values.insert(dest.1.name.clone(), LLVM::Value::Const((x % y).into()));
                             },
-                            
+
                             _ => {},
                         }
                     }
@@ -225,14 +237,13 @@ impl Optimizer {
                     };
                 },
 
-                GetElementPtr { dest, src, idx1, idx2 } => {
-                    let new_idx11 = self.optimize_value(&idx1.1);
-                    let new_idx21 = self.optimize_value(&idx2.1);
+                GetElementPtr { dest, src, args } => {
                     new_instr = GetElementPtr {
                         dest,
                         src,
-                        idx1: (idx1.0, new_idx11),
-                        idx2: (idx2.0, new_idx21),
+                        args: args.iter()
+                            .map(|idx| (idx.0.clone(), self.optimize_value(&idx.1)))
+                            .collect(),
                     };
                 },
 

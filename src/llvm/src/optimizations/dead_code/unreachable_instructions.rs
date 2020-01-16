@@ -51,12 +51,14 @@ impl Optimizer {
                 Store { src: _, dest: _ } |
                 Phi { dest: _, preds: _ } |
                 Arithm { dest: _, op: _, val_lhs: _, val_rhs: _ } |
-                GetElementPtr { dest: _, src: _, idx1: _, idx2: _ } |
+                GetElementPtr { dest: _, src: _, args: _ } |
                 Compare { dest_reg: _, op: _, ty: _, val_lhs: _, val_rhs: _ } |
                 Call { dest_reg: _, ret_ty: _, name: _, args: _ } |
                 Unreachable |
                 Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } => {
+                Label { val: _, preds: _ } |
+                Sext { .. } |
+                Bitcast { .. } => {
                     new_instrs.push(i.clone());
                 },
 

@@ -1,0 +1,6 @@
+int main() {
+  int[] arr = new int[10];
+  for (int[] x: arr) {
+  }
+  return 0;
+}

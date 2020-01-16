@@ -47,7 +47,9 @@ fn get_max_counter(blocks: &Vec<LLVM::Block>) -> usize {
             Store { src: _, dest } |
             Arithm { dest, op: _, val_lhs: _, val_rhs: _ } |
             Phi { dest, preds: _ } |
-            GetElementPtr { dest, src: _, idx1: _, idx2: _ } => {
+            Sext { dest, .. } |
+            Bitcast { dest, .. } |
+            GetElementPtr { dest, src: _, args: _ } => {
                 res = cmp::max(res, dest.1.counter.clone());
             }
 
@@ -209,26 +211,30 @@ impl SSATransformer {
                 // load instructions registers should be replaced with the
                 // most recent version of the variable they load
                 Load { src, dest } => {
-                    let new_var = self.variables_versions
-                        .get(&src.1).unwrap()
-                        .last().unwrap();
-                    self.replacements.insert(dest.1.clone(), new_var.clone());
+                    if self.variables_versions.contains_key(&src.1) {
+                        let new_var = self.variables_versions
+                            .get(&src.1).unwrap()
+                            .last().unwrap();
+                        self.replacements.insert(dest.1.clone(), new_var.clone());
+                    }
                 },
 
                 Store { src, dest } => {
-                    let mut new_ver = src.1.clone();
-                    if let LLVM::Value::Register(r) = &src.1 {
-                        if let Some(v) = self.replacements.get(&r) {
-                            new_ver = v.clone()
+                    if self.variables_versions.contains_key(&dest.1) {
+                        let mut new_ver = src.1.clone();
+                        if let LLVM::Value::Register(r) = &src.1 {
+                            if let Some(v) = self.replacements.get(&r) {
+                                new_ver = v.clone()
+                            }
                         }
+                        match self.variables_versions.entry(dest.1.clone()) {
+                            Entry::Occupied(mut versions) => {
+                                versions.get_mut().push(new_ver);
+                            },
+                            _ => {},
+                        }
+                        new_vars_versions.push(dest.1.clone());
                     }
-                    match self.variables_versions.entry(dest.1.clone()) {
-                        Entry::Occupied(mut versions) => {
-                            versions.get_mut().push(new_ver);
-                        },
-                        _ => {},
-                    }
-                    new_vars_versions.push(dest.1.clone());
                 }
 
                 _ => {},
@@ -303,16 +309,37 @@ impl SSATransformer {
         for i in instrs {
             match i.clone() {
                 // memory instructions are no longer needed
-                Alloc { dest: _ } |
-                Load { src: _, dest: _ } |
-                Store { src: _, dest: _ } => {}
+                Alloc { dest: _ } => {},
+
+                Load { src, dest: _ } => {
+                    if !self.variables_versions.contains_key(&src.1) {
+                        new_instrs.push(i.clone());
+                    }
+                },
+
+                Store { src, dest } => {
+                    if !self.variables_versions.contains_key(&dest.1) {
+                        new_instrs.push(Store {
+                            src: (src.0, replace_value(src.1)),
+                            dest,
+                        });
+                    }
+                }
 
                 ReturnVoid |
                 Unreachable |
                 Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } => {
+                Label { val: _, preds: _ } |
+                Sext { .. } => {
                     new_instrs.push(i.clone());
                 },
+
+                Bitcast { src, dest } => {
+                    new_instrs.push(Bitcast {
+                        src: (src.0, replace_value(src.1)),
+                        dest,
+                    });
+                }
 
                 Compare { dest_reg, op, ty, val_lhs, val_rhs } => {
                     let new_val_lhs = replace_value(val_lhs);
@@ -372,14 +399,13 @@ impl SSATransformer {
                     });
                 },
 
-                GetElementPtr { dest, src, idx1, idx2 } => {
-                    let new_idx11 = replace_value(idx1.1);
-                    let new_idx21 = replace_value(idx2.1);
+                GetElementPtr { dest, src, args } => {
                     new_instrs.push(GetElementPtr {
                         dest,
                         src,
-                        idx1: (idx1.0, new_idx11),
-                        idx2: (idx2.0, new_idx21),
+                        args: args.iter()
+                            .map(|idx| (idx.0.clone(), replace_value(idx.1.clone())))
+                            .collect(),
                     });
                 },
 

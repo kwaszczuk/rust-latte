@@ -1,0 +1,8 @@
+int main() {
+  if ((new int[42]).length == 42) {
+    printString("true");
+  } else {
+    printString("false");
+  }
+  return 0;
+}

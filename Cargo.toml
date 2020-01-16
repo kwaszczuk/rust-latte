@@ -15,6 +15,7 @@ x86 = { path = "src/x86", optional = true }
 members = [
   "src/base",
   "src/parser",
+  "src/parser/generate",
   "src/analyzer",
   "src/llvm",
   "src/x86"

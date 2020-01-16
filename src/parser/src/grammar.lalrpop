@@ -56,8 +56,35 @@ ListNoSep<Rule>: Vec<Rule> =
     rules
   };
 
+pub LValue: ast::LValue = {
+  <_beg: @L>
+      <loc_1: @L> <ident: PIdent> <loc_2: @R>
+  <_end: @R> => ast::LValue {
+      all_loc: Location::new(_beg, _end),
+      value: ast::LValueTypes::Var {
+          ident,
+          ident_loc: Location::new(loc_1, loc_2),
+      },
+  },
+
+  <_beg: @L>
+      <arr_expr: Expr7> "[" <idx_expr: Expr> "]"
+  <_end: @R> => ast::LValue {
+      all_loc: Location::new(_beg, _end),
+      value: ast::LValueTypes::ArrAt {
+          arr_expr: Box::new(arr_expr),
+          idx_expr: Box::new(idx_expr),
+      },
+  },
+};
+
 // -------------------  TYPES  -------------------
 pub Type: ast::Type = {
+    <ty: SimpleType> => ty,
+    <ty: Type> "[]" => ast::Type::Array(Box::new(ty)),
+};
+
+pub SimpleType: ast::Type = {
     "int"     => ast::Type::Int,  // Int
     "string"  => ast::Type::Str,  // Str
     "boolean" => ast::Type::Bool, // Boolean
@@ -210,6 +237,33 @@ pub OpenStmt: ast::Stmt = {
           },
       }
   }, // While
+
+  <_beg: @L>
+    "for" "(" <loc_1: @L> <ty: Type> <loc_2: @R> <loc_3: @L> <ident: PIdent> <loc_4: @R> ":" <arr_expr: Expr> ")" <stmt: OpenStmt>
+  <_end: @R> => {
+      let blk;
+      match stmt.value {
+          ast::StmtTypes::BStmt { block } => { blk = block.clone() },
+          _ => {
+              blk = ast::Block {
+                  stmts: vec![stmt.clone()],
+                  end_loc: Location::new(stmt.all_loc.end, stmt.all_loc.end),
+              };
+          }
+      }
+
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::ForEach {
+              ty,
+              ty_loc: Location::new(loc_1, loc_2),
+              ident,
+              ident_loc: Location::new(loc_3, loc_4),
+              expr: arr_expr,
+              block: blk,
+          },
+      }
+  }, // ForEach
 };
 
 pub ClosedStmt: ast::Stmt = {
@@ -272,6 +326,33 @@ pub ClosedStmt: ast::Stmt = {
           },
       }
   }, // While
+
+  <_beg: @L>
+    "for" "(" <loc_1: @L> <ty: Type> <loc_2: @R> <loc_3: @L> <ident: PIdent> <loc_4: @R> ":" <arr_expr: Expr> ")" <stmt: ClosedStmt>
+  <_end: @R> => {
+      let blk;
+      match stmt.value {
+          ast::StmtTypes::BStmt { block } => { blk = block.clone() },
+          _ => {
+              blk = ast::Block {
+                  stmts: vec![stmt.clone()],
+                  end_loc: Location::new(stmt.all_loc.end, stmt.all_loc.end),
+              };
+          }
+      }
+
+      ast::Stmt {
+          all_loc: Location::new(_beg, _end),
+          value: ast::StmtTypes::ForEach {
+              ty,
+              ty_loc: Location::new(loc_1, loc_2),
+              ident,
+              ident_loc: Location::new(loc_3, loc_4),
+              expr: arr_expr,
+              block: blk,
+          },
+      }
+  }, // ForEach
 };
 
 pub SimpleStmt: ast::Stmt = {
@@ -303,33 +384,30 @@ pub SimpleStmt: ast::Stmt = {
   }, // Decl
 
   <_beg: @L>
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> "=" <expr: Expr> ";"
+    <lval: LValue> "=" <expr: Expr> ";"
   <_end: @R> => ast::Stmt {
       all_loc: Location::new(_beg, _end),
       value: ast::StmtTypes::Ass {
-          ident,
-          ident_loc: Location::new(loc_1, loc_2),
+          lval,
           expr,
       },
   }, // Ass
 
   <_beg: @L>
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> "++" ";"
+    <lval: LValue> "++" ";"
   <_end: @R> => ast::Stmt {
       all_loc: Location::new(_beg, _end),
       value: ast::StmtTypes::Incr {
-          ident,
-          ident_loc: Location::new(loc_1, loc_2),
+          lval,
       },
   }, // Incr
 
   <_beg: @L>
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> "--" ";"
+    <lval: LValue> "--" ";"
   <_end: @R> => ast::Stmt {
       all_loc: Location::new(_beg, _end),
       value: ast::StmtTypes::Decr {
-          ident,
-          ident_loc: Location::new(loc_1, loc_2),
+          lval,
       },
   }, // Decr
 
@@ -479,14 +557,41 @@ pub Expr5: ast::Expr = {
 
 pub Expr6: ast::Expr = {
   <_beg: @L>
-    <loc_1: @L> <ident: PIdent> <loc_2: @R>
+    "new" <loc_1: @L> <ty: Type> <loc_2: @R> "[" <len_expr: Expr> "]"
   <_end: @R> => ast::Expr {
       all_loc: Location::new(_beg, _end),
-      value: ast::ExprTypes::EVar {
+      value: ast::ExprTypes::ENew {
+          ty: ast::Type::Array(Box::new(ty)),
+          ty_loc: Location::new(loc_1, loc_2),
+          len_expr: Box::new(len_expr),
+      },
+  }, // ENew
+
+  <_beg: @L>
+    <arr_expr: Expr7> "." "length"
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EArrLen {
+          arr_expr: Box::new(arr_expr),
+      },
+  }, // EArrLen
+
+  Expr7,
+};
+
+
+pub Expr7: ast::Expr = {
+  <_beg: @L>
+    <loc_1: @L> <ident: PIdent> <loc_2: @R> "(" <loc_3: @L> <args: List<Expr, Comma>> <loc_4: @R>  ")"
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::EApp {
           ident,
           ident_loc: Location::new(loc_1, loc_2),
+          args,
+          args_loc: Location::new(loc_3, loc_4),
       },
-  }, // EVar
+  }, // EApp
 
   <_beg: @L>
     <value: PInteger>
@@ -512,18 +617,6 @@ pub Expr6: ast::Expr = {
   }, // ELitFalse
 
   <_beg: @L>
-    <loc_1: @L> <ident: PIdent> <loc_2: @R> "(" <loc_3: @L> <args: List<Expr, Comma>> <loc_4: @R>  ")"
-  <_end: @R> => ast::Expr {
-      all_loc: Location::new(_beg, _end),
-      value: ast::ExprTypes::EApp {
-          ident,
-          ident_loc: Location::new(loc_1, loc_2),
-          args,
-          args_loc: Location::new(loc_3, loc_4),
-      },
-  }, // EApp
-
-  <_beg: @L>
     <value: PString>
   <_end: @R> => ast::Expr {
       all_loc: Location::new(_beg, _end),
@@ -531,6 +624,15 @@ pub Expr6: ast::Expr = {
           value,
       },
   }, // EString
+
+  <_beg: @L>
+    <lval: LValue>
+  <_end: @R> => ast::Expr {
+      all_loc: Location::new(_beg, _end),
+      value: ast::ExprTypes::ELValue {
+          lval,
+      },
+  }, // ELValue
 
   <_beg: @L>
     "(" <expr: Expr> ")"

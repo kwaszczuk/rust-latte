@@ -97,6 +97,7 @@ impl fmt::Display for Static {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
+    Int64,
     Int32,
     Int8,
     Int1,
@@ -111,23 +112,61 @@ pub enum Type {
     }
 }
 
+pub static ARRAY_LENGTH_TYPE: Type = Type::Int32;
+pub static DEFAULT_ARRAY_TYPE: Type = Type::Int8;
+#[cfg(target_pointer_width = "64")]
+pub static ADDRESS_TYPE: Type = Type::Int64;
+#[cfg(target_pointer_width = "32")]
+pub static ADDRESS_TYPE: Type = Type::Int32;
+
 impl Type {
     pub fn default_value(ty: &Type) -> Value {
         use Type::*;
         match ty {
+            Int64 => Const::from(0).into(),
             Int32 => Const::from(0).into(),
             Int8 => Const::from(0).into(),
             Int1 => Const::False.into(),
             Ptr(_) => Const::Null.into(),
-            Void => {
-                panic!("no default value for void type");
-            },
-            Fun { ret_ty: _ } => {
-                panic!("no default value for fun type");
-            },
+
+            Void |
+            Fun { ret_ty: _ } |
             Array { ty: _, len: _ } => {
-                panic!("no default value for array type");
+                panic!("no default value for this type");
             },
+        }
+    }
+
+    // size in bytes
+    pub fn byte_size(&self) -> i32 {
+        use Type::*;
+        match self {
+            Int64 => 8,
+            Int32 => 4,
+            Int8 => 1,
+            Int1 => 1,
+            Ptr(_) => ADDRESS_TYPE.byte_size(),
+
+            Void |
+            Fun { ret_ty: _ } |
+            Array { ty: _, len: _ } => {
+                panic!("size_of not supported for this type");
+            },
+        }
+    }
+
+    pub fn entry_byte_size(&self) -> Option<i32> {
+        match self.deref_ptr() {
+            Some(entry) => Some(entry.byte_size()),
+            None => None,
+        }
+    }
+
+    pub fn deref_ptr(&self) -> Option<Type> {
+        use Type::*;
+        match self {
+            Ptr(entry) => Some(*entry.clone()),
+            _ => None,
         }
     }
 
@@ -148,6 +187,7 @@ impl From<ast::Type> for Type {
             Bool => Type::Int1,
             Void => Type::Void,
             Str => Type::Ptr(Box::new(Type::Int8)),
+            Array(t) => Type::Ptr(Box::new(Type::from(*t.clone()))),
         }
     }
 }
@@ -162,6 +202,7 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Type::*;
         match self {
+            Int64 => write!(f, "i64"),
             Int32 => write!(f, "i32"),
             Int8 => write!(f, "i8"),
             Int1 => write!(f, "i1"),
@@ -232,6 +273,12 @@ impl From<Register> for Value {
 impl From<Const> for Value {
     fn from(c: Const) -> Self {
         Value::Const(c)
+    }
+}
+
+impl From<i32> for Value {
+    fn from(i: i32) -> Self {
+        Const::from(i).into()
     }
 }
 
@@ -317,12 +364,19 @@ pub enum Instr {
     GetElementPtr {
         dest: (Type, Register),
         src: (Type, Value),
-        idx1: (Type, Value),
-        idx2: (Type, Value),
+        args: Vec<(Type, Value)>,
     },
     Return {
         ty: Type,
         val: Value,
+    },
+    Sext {
+        dest: (Type, Register),
+        src: (Type, Value),
+    },
+    Bitcast {
+        dest: (Type, Register),
+        src: (Type, Value),
     },
     ReturnVoid,
     Unreachable
@@ -389,13 +443,20 @@ impl fmt::Display for Instr {
                     dest.1, dest.0, preds_str.join(", ")
                 )
             },
-            GetElementPtr { dest, src, idx1, idx2 } => {
-                write!(
-                    f, "{} = getelementptr {}, {} {}, {} {}, {} {}",
-                    dest.1, dest.0, src.0, src.1, idx1.0, idx1.1, idx2.0, idx2.1
-                )
+            GetElementPtr { dest, src, args } => {
+                let base_str = format!("{} = getelementptr {}, {} {}",
+                                       dest.1, dest.0, src.0, src.1);
+                let args_vec: Vec<String> = args.iter()
+                    .map(|(ty, val)| format!(", {} {}", ty, val))
+                    .collect();
+
+                write!(f, "{}{}", base_str, args_vec.join(""))
             },
             Return { ty, val } => write!(f, "ret {} {}", ty, val),
+            Sext { dest, src } => write!(f, "{} = sext {} {} to {}",
+                                         dest.1, src.0, src.1, dest.0),
+            Bitcast { dest, src } => write!(f, "{} = bitcast {} {} to {}",
+                                            dest.1, src.0, src.1, dest.0),
             ReturnVoid => write!(f, "ret void"),
             Unreachable => write!(f, "unreachable"),
         }

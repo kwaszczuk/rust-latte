@@ -1,0 +1,6 @@
+int main() {
+  int a = "123"[0],
+      b = 1[0],
+      c = true[0];
+  return 0;
+}

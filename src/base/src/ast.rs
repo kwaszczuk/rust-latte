@@ -8,6 +8,22 @@ pub enum Type {
     Str,
     Bool,
     Void,
+    Array(Box<Type>),
+}
+
+pub type LValue = Located<LValueTypes>;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum LValueTypes {
+    Var {
+        ident: String,
+        ident_loc: Location
+    },
+    ArrAt {
+        arr_expr: Box<Expr>,
+        idx_expr: Box<Expr>,
+    },
+
 }
 
 #[derive(Debug, PartialEq)]
@@ -60,17 +76,14 @@ pub enum StmtTypes {
         items: Vec<Item>,
     },
     Ass {
-        ident: String,
-        ident_loc: Location,
+        lval: LValue,
         expr: Expr,
     },
     Incr {
-        ident: String,
-        ident_loc: Location,
+        lval: LValue,
     },
     Decr {
-        ident: String,
-        ident_loc: Location,
+        lval: LValue,
     },
     Ret {
         ret_loc: Location,
@@ -86,6 +99,14 @@ pub enum StmtTypes {
         block_false: Block,
     },
     While {
+        expr: Expr,
+        block: Block,
+    },
+    ForEach {
+        ty: Type,
+        ty_loc: Location,
+        ident: String,
+        ident_loc: Location,
         expr: Expr,
         block: Block,
     },
@@ -130,9 +151,8 @@ pub enum ExprTypes {
     ENot {
         expr: Box<Expr>,
     },
-    EVar {
-        ident: String,
-        ident_loc: Location,
+    ELValue {
+        lval: LValue,
     },
     ELitInt {
         value: String,
@@ -147,6 +167,14 @@ pub enum ExprTypes {
     },
     EString {
         value: String,
+    },
+    ENew {
+        ty: Type,
+        ty_loc: Location,
+        len_expr: Box<Expr>,
+    },
+    EArrLen {
+        arr_expr: Box<Expr>,
     },
 }
 

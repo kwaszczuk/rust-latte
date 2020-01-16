@@ -69,7 +69,7 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
             }
         },
 
-        EVar { ident: _, ident_loc: _ } => None,
+        ELValue { lval: _ } => None,
 
         ELitInt { value } => Some(Value::Int(value.parse::<i32>().unwrap())),
 
@@ -78,6 +78,10 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
         ELitFalse => Some(Value::Bool(false)),
 
         EApp { ident: _, ident_loc: _, args: _, args_loc: _} => None,
+
+        ENew { ty: _, ty_loc: _, len_expr: _ } => None,
+
+        EArrLen { arr_expr: _ } => None,
 
         EString { value } => Some(Value::Str(value.clone())),
     }

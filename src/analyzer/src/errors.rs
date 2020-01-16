@@ -30,6 +30,10 @@ pub enum TypeError {
         ty: VarType,
         loc: Location,
     },
+    NotAnArray {
+        ty: VarType,
+        loc: Location,
+    },
     OperatorUnsupported {
         op: Operator,
         loc: Location,
@@ -114,6 +118,12 @@ impl TypeError {
             NotAFunction { ty, loc } =>
                 Diagnostic::new_error(
                     "call expression requires function",
+                    Label::new(f_id, loc, format!("type `{}` found here",
+                                                  ty)),
+                ),
+            NotAnArray { ty, loc } =>
+                Diagnostic::new_error(
+                    format!("expected array type but `{}` was found", ty),
                     Label::new(f_id, loc, format!("type `{}` found here",
                                                   ty)),
                 ),

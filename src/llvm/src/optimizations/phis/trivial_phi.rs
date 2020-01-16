@@ -75,7 +75,9 @@ impl Optimizer {
                 Unreachable |
                 Load { src: _, dest: _ } |
                 Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } => {
+                Label { val: _, preds: _ } |
+                Sext { .. } |
+                Bitcast { .. } => {
                     new_instr = i.clone();
                 },
 
@@ -147,14 +149,13 @@ impl Optimizer {
                     };
                 },
 
-                GetElementPtr { dest, src, idx1, idx2 } => {
-                    let new_idx11 = self.optimize_value(&idx1.1);
-                    let new_idx21 = self.optimize_value(&idx2.1);
+                GetElementPtr { dest, src, args } => {
                     new_instr = GetElementPtr {
                         dest,
                         src,
-                        idx1: (idx1.0, new_idx11),
-                        idx2: (idx2.0, new_idx21),
+                        args: args.iter()
+                            .map(|idx| (idx.0.clone(), self.optimize_value(&idx.1)))
+                            .collect(),
                     };
                 },
 

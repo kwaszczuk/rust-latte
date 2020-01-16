@@ -2,8 +2,14 @@ import os
 import sys
 import subprocess
 
-BAD_TESTS_DIRS = ['tests/bad']
-GOOD_TESTS_DIRS = ['tests/good', 'tests/students/good/basic']
+BAD_TESTS_DIRS = ['tests/bad', 'tests/my/bad']
+GOOD_TESTS_DIRS = [
+    'tests/good',
+    'tests/students/good/basic',
+    'tests/extensions/arrays1',
+    'tests/students/good/arrays',
+    'tests/my/good',
+]
 
 wrongs = []
 prog = sys.argv[1]

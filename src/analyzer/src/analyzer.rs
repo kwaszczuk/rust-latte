@@ -238,7 +238,7 @@ impl SemanticAnalyzer {
 
         for stmt in &block.stmts {
             match &stmt.value {
-                Ret { ret_loc: _, value: _ } => {
+                Ret { .. } => {
                     return true
                 },
                 While { expr, block } => {
@@ -610,7 +610,7 @@ impl SemanticAnalyzer {
             ELitTrue |
             ELitFalse => Ok(Simple(Bool)),
 
-            EApp { ident, ident_loc, args, args_loc: _ } => {
+            EApp { ident, ident_loc, args, .. } => {
                 if throw_if_undeclared!(self, ident, ident_loc) {
                     return Err(())
                 }
@@ -650,7 +650,7 @@ impl SemanticAnalyzer {
             },
 
 
-            ENew { ty, ty_loc: _, len_expr } => {
+            ENew { ty, len_expr, .. } => {
                 let exp_ty = Simple(Int);
                 analyse_expr_and_match_type![self, len_expr, exp_ty, len_expr.all_loc];
                 Ok(Simple(SimpleType::from(ty)))
@@ -672,7 +672,7 @@ impl SemanticAnalyzer {
                 Ok(Simple(Int))
             },
 
-            EString { value: _ } => Ok(Simple(Str)),
+            EString { .. } => Ok(Simple(Str)),
         }
     }
 }

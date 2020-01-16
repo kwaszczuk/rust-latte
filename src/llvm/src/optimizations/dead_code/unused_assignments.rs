@@ -52,10 +52,10 @@ impl Optimizer {
         for i in instrs {
             match i {
                 Alloc { dest } |
-                Load { src: _, dest } |
-                GetElementPtr { dest, src: _, args: _ } |
-                Phi { dest, preds: _ } |
-                Arithm { dest, op: _, val_lhs: _, val_rhs: _ } |
+                Load { dest, .. } |
+                GetElementPtr { dest, .. } |
+                Phi { dest, .. } |
+                Arithm { dest, .. } |
                 Sext { dest, .. } |
                 Bitcast { dest, .. } => {
                     if let Some(_) = self.used_registers.get(&dest.1) {
@@ -65,7 +65,7 @@ impl Optimizer {
                     }
                 },
 
-                Compare { dest_reg, op: _, ty: _, val_lhs: _, val_rhs: _ } => {
+                Compare { dest_reg, .. } => {
                     if let Some(_) = self.used_registers.get(&dest_reg) {
                     } else {
                         // ignore this instruction
@@ -93,9 +93,9 @@ impl Optimizer {
                 ReturnVoid |
                 Unreachable |
                 Branch(_) |
-                Label { val: _, preds: _ } |
+                Label { .. } |
                 Store { .. } |
-                Return { ty: _, val: _ } => {
+                Return { .. } => {
                 },
             }
 
@@ -111,7 +111,7 @@ impl Optimizer {
         for b in blocks {
             for i in &b.instrs {
                 match i {
-                    Load { src, dest: _ } => {
+                    Load { src, .. } => {
                         self.used_registers.insert(src.1.clone(), true);
                     },
 
@@ -129,8 +129,8 @@ impl Optimizer {
                         self.used_registers.insert(dest.1.clone(), true);
                     },
 
-                    Arithm { dest: _, op: _, val_lhs, val_rhs } |
-                    Compare { dest_reg: _, op: _, ty: _, val_lhs, val_rhs } => {
+                    Arithm { val_lhs, val_rhs, .. } |
+                    Compare { val_lhs, val_rhs, .. } => {
                         if let LLVM::Value::Register(r) = val_lhs {
                             self.used_registers.insert(r.clone(), true);
                         }
@@ -139,7 +139,7 @@ impl Optimizer {
                         }
                     },
 
-                    Phi { dest: _, preds } => {
+                    Phi { preds, .. } => {
                         for p in preds {
                             if let LLVM::Value::Register(r) = p.0.clone() {
                                 self.used_registers.insert(r.clone(), true);
@@ -147,7 +147,7 @@ impl Optimizer {
                         }
                     }
 
-                    GetElementPtr { dest: _, src, args } => {
+                    GetElementPtr { src, args, .. } => {
                         if let LLVM::Value::Register(r) = src.1.clone() {
                             self.used_registers.insert(r.clone(), true);
                         }
@@ -158,7 +158,7 @@ impl Optimizer {
                         }
                     },
 
-                    Call { dest_reg: _, ret_ty: _, name: _, args } => {
+                    Call { args, .. } => {
                         for a in args {
                             if let LLVM::Value::Register(r) = a.1.clone() {
                                 self.used_registers.insert(r.clone(), true);
@@ -166,18 +166,18 @@ impl Optimizer {
                         }
                     },
 
-                    Branch(LLVM::Branch::Conditional { ty: _, val, true_label: _, false_label: _ }) |
-                    Return { ty: _, val } => {
+                    Branch(LLVM::Branch::Conditional { val, .. }) |
+                    Return { val, .. } => {
                         if let LLVM::Value::Register(r) = val {
                             self.used_registers.insert(r.clone(), true);
                         }
                     },
 
-                    Branch(LLVM::Branch::Direct { label: _ }) |
+                    Branch(LLVM::Branch::Direct { .. }) |
                     ReturnVoid |
                     Unreachable |
-                    Label { val: _, preds: _ } |
-                    Alloc { dest: _ } => {
+                    Label { .. } |
+                    Alloc { .. } => {
                     },
                 }
             }

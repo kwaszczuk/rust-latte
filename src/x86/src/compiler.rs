@@ -164,23 +164,23 @@ impl X86Compiler {
         for b in &fun.body {
             for i in &b.instrs {
                 match i {
-                    Alloc { dest: _ } |
+                    Alloc { .. } |
                     ReturnVoid |
                     Unreachable |
-                    Load { src: _, dest: _ } |
+                    Load { .. } |
                     Branch(_) |
-                    Store { src: _, dest: _ } |
-                    Return { ty: _, val: _} |
-                    Label { val: _, preds: _ } => {},
+                    Store { .. } |
+                    Return { .. } |
+                    Label { .. } => {},
 
-                    Compare { dest_reg, op: _, ty: _, val_lhs: _, val_rhs: _ } => {
+                    Compare { dest_reg, .. } => {
                         cnt += 1;
                         self.registers_map.insert(dest_reg.clone(), X86::Memory {
                             offset: -cnt * DEFAULT_WORD_SIZE,
                         }.into());
                     },
 
-                    Call { dest_reg, ret_ty: _, name: _, args: _ } => {
+                    Call { dest_reg, .. } => {
                         if let Some(reg) = dest_reg {
                             cnt += 1;
                             self.registers_map.insert(reg.clone(), X86::Memory {
@@ -189,9 +189,9 @@ impl X86Compiler {
                         }
                     },
 
-                    Phi { dest, preds: _ } |
-                    GetElementPtr { dest, src: _, idx1: _, idx2: _ } |
-                    Arithm { dest, op: _, val_lhs: _, val_rhs: _ } => {
+                    Phi { dest, .. } |
+                    GetElementPtr { dest, .. } |
+                    Arithm { dest, .. } => {
                         cnt += 1;
                         self.registers_map.insert(dest.1.clone(), X86::Memory {
                             offset: -cnt * DEFAULT_WORD_SIZE,
@@ -289,12 +289,12 @@ impl X86Compiler {
 
         for i in &block.instrs {
             match i {
-                LLVM::Instr::Alloc { dest: _ } |
-                LLVM::Instr::Store { src: _, dest: _ } |
-                LLVM::Instr::Load { src: _, dest: _ } => {
+                LLVM::Instr::Alloc { .. } |
+                LLVM::Instr::Store { .. } |
+                LLVM::Instr::Load { .. } => {
                     panic!("x86 compilation require LLVM in SSA format")
                 },
-                LLVM::Instr::Label { val: _, preds: _ } => {
+                LLVM::Instr::Label { .. } => {
                     panic!("label instruction should not appear in block")
                 },
 
@@ -323,7 +323,7 @@ impl X86Compiler {
                             let dest = self.labels_map.get(label).unwrap_or_else(|| panic!("1")).clone();
                             new_instrs.push(Jump(X86::Jump::Direct { dest }));
                         },
-                        LLVM::Branch::Conditional { ty: _, val, true_label, false_label } => {
+                        LLVM::Branch::Conditional { val, true_label, false_label, .. } => {
                             let rhs = cast_value_to_value_with_rax(val, &mut new_instrs);
                             new_instrs.push(Compare {
                                 ty: Type::Byte,
@@ -346,7 +346,7 @@ impl X86Compiler {
                     }
                 }
 
-                LLVM::Instr::Compare { dest_reg, op, ty: _, val_lhs, val_rhs } => {
+                LLVM::Instr::Compare { dest_reg, op, val_lhs, val_rhs, .. } => {
                     let lhs = cast_value_to_value(val_rhs);
                     let rhs = cast_value_to_value_with_rax(val_lhs, &mut new_instrs);
 
@@ -366,7 +366,7 @@ impl X86Compiler {
                     });
                 },
 
-                LLVM::Instr::Call { dest_reg, ret_ty: _, name, args } => {
+                LLVM::Instr::Call { dest_reg, name, args, .. } => {
                     for i in (0..args.len()).rev() {
                         let a = args[i].clone();
                         let src_val = cast_value_to_value(&a.1);
@@ -415,11 +415,11 @@ impl X86Compiler {
                     }
                 },
 
-                LLVM::Instr::Phi { dest: _, preds: _ } => {
+                LLVM::Instr::Phi { .. } => {
                     // handled during the jumps
                 },
 
-                LLVM::Instr::GetElementPtr { dest, src, idx1: _, idx2: _ } => {
+                LLVM::Instr::GetElementPtr { dest, src, .. } => {
                     match src.1.clone() {
                         LLVM::Value::Static(s) => {
                             let static_ = self.statics_map.get(&s).unwrap().clone();
@@ -465,7 +465,7 @@ impl X86Compiler {
                                 src: Register::RCX.into(),
                                 dest: X86::Memory { offset: 0 }.into(), //dummy
                             });
-                            
+
                             if let LLVMOperator::Operator::Arithm(LLVMOperator::ArithmOp::Div) = op {
                                 new_instrs.push(Move {
                                     ty: DEFAULT_TYPE.clone(),
@@ -498,7 +498,7 @@ impl X86Compiler {
                     }
                 },
 
-                LLVM::Instr::Return { ty: _, val } => {
+                LLVM::Instr::Return { val, .. } => {
                     let src_val = cast_value_to_value(val);
 
                     new_instrs.push(Move {

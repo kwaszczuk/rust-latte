@@ -39,46 +39,46 @@ impl Optimizer {
                 for i in &b.instrs {
                     match i {
 
-                        Arithm { dest: _, op: _, val_lhs, val_rhs } |
-                        Compare { dest_reg: _, op: _, ty: _, val_lhs, val_rhs } => {
+                        Arithm { val_lhs, val_rhs, .. } |
+                        Compare { val_lhs, val_rhs, .. } => {
                             self.used_values.insert(val_lhs.clone());
                             self.used_values.insert(val_rhs.clone());
                         },
 
-                        Phi { dest: _, preds } => {
+                        Phi { preds, .. } => {
                             for p in preds {
                                 self.used_values.insert(p.0.clone());
                             }
                         }
 
-                        GetElementPtr { dest: _, src, args } => {
+                        GetElementPtr { src, args, .. } => {
                             self.used_values.insert(src.1.clone());
                             for idx in args {
                                 self.used_values.insert(idx.1.clone());
                             }
                         },
 
-                        Call { dest_reg: _, ret_ty: _, name, args } => {
+                        Call { name, args, .. } => {
                             self.used_functions.insert(name.clone());
                             for a in args {
                                 self.used_values.insert(a.1.clone());
                             }
                         },
 
-                        Branch(LLVM::Branch::Conditional { ty: _, val, true_label: _, false_label: _ }) |
-                        Return { ty: _, val } => {
+                        Branch(LLVM::Branch::Conditional { val, .. }) |
+                        Return { val, .. } => {
                             self.used_values.insert(val.clone());
                         },
 
-                        Branch(LLVM::Branch::Direct { label: _ }) |
+                        Branch(LLVM::Branch::Direct { .. }) |
                         ReturnVoid |
                         Unreachable |
-                        Label { val: _, preds: _ } |
-                        Alloc { dest: _ } |
+                        Label { .. } |
+                        Alloc { .. } |
                         // we can ignore `src` here as it's a register and
                         // anyway we will only look on statics
-                        Load { src: _, dest: _ } |
-                        Store { src: _, dest: _ } |
+                        Load { .. } |
+                        Store { .. } |
                         // `sext` and `bitcast` won't work with statics, so ignore them
                         Sext { .. } |
                         Bitcast { .. } => {

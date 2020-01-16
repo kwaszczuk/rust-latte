@@ -70,12 +70,12 @@ impl Optimizer {
         for i in instrs {
             let new_instr: LLVM::Instr;
             match i.clone() {
-                Alloc { dest: _ } |
+                Alloc { .. } |
                 ReturnVoid |
                 Unreachable |
-                Load { src: _, dest: _ } |
-                Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } |
+                Load { .. } |
+                Branch(LLVM::Branch::Direct { .. }) |
+                Label { .. } |
                 Sext { .. } |
                 Bitcast { .. } => {
                     new_instr = i.clone();

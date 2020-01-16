@@ -40,9 +40,9 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
             }
         },
 
-        ERel { op, op_loc: _, expr1, expr2 } |
-        EAdd { op, op_loc: _, expr1, expr2 } |
-        EMul { op, op_loc: _, expr1, expr2 } => {
+        ERel { op, expr1, expr2, .. } |
+        EAdd { op, expr1, expr2, .. } |
+        EMul { op, expr1, expr2, .. } => {
             let val1 = eval_expr(&expr1);
             let val2 = eval_expr(&expr2);
             match (val1, val2) {
@@ -69,7 +69,7 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
             }
         },
 
-        ELValue { lval: _ } => None,
+        ELValue { .. } => None,
 
         ELitInt { value } => Some(Value::Int(value.parse::<i32>().unwrap())),
 
@@ -77,11 +77,11 @@ fn eval_expr(expr: &ast::Expr) -> Option<Value> {
 
         ELitFalse => Some(Value::Bool(false)),
 
-        EApp { ident: _, ident_loc: _, args: _, args_loc: _} => None,
+        EApp { .. } => None,
 
-        ENew { ty: _, ty_loc: _, len_expr: _ } => None,
+        ENew { .. } => None,
 
-        EArrLen { arr_expr: _ } => None,
+        EArrLen { .. } => None,
 
         EString { value } => Some(Value::Str(value.clone())),
     }

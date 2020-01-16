@@ -10,13 +10,13 @@ fn is_node_backward_reducible(node: &CFGNode, cfg: &ControlFlowGraph) -> bool {
         // it's condition will be messed up after join, so we can't merge it just yet.
         // Maybe we will be able to do it on some other run if it'll appear to be
         // a trivial phi.
-        if let Some(LLVM::Instr::Phi { dest: _, preds: _ }) = node.block.instrs.first() {
+        if let Some(LLVM::Instr::Phi { .. }) = node.block.instrs.first() {
             return false;
         }
 
         return node.prevs.iter().any(|p| {
             if let Some(next_node) = cfg.nodes.get(&p) {
-                if let Some(LLVM::Instr::Phi { dest: _, preds: _ }) = next_node.block.instrs.first() {
+                if let Some(LLVM::Instr::Phi { .. }) = next_node.block.instrs.first() {
                     return false;
                 }
             }

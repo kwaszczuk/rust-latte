@@ -24,7 +24,7 @@ fn find_variables(blocks: &Vec<LLVM::Block>) -> Vec<(LLVM::Type, LLVM::Register)
 fn redefines_variable(block: &LLVM::Block, var: &LLVM::Register) -> bool {
     for i in &block.instrs {
         match i {
-            LLVM::Instr::Store { src: _, dest } => {
+            LLVM::Instr::Store { dest, .. } => {
                 if &dest.1 == var {
                     return true;
                 }
@@ -43,31 +43,31 @@ fn get_max_counter(blocks: &Vec<LLVM::Block>) -> usize {
     for i in &instrs {
         match i {
             Alloc { dest } |
-            Load { src: _, dest } |
-            Store { src: _, dest } |
-            Arithm { dest, op: _, val_lhs: _, val_rhs: _ } |
-            Phi { dest, preds: _ } |
+            Load { dest, .. } |
+            Store { dest, .. } |
+            Arithm { dest, .. } |
+            Phi { dest, .. } |
             Sext { dest, .. } |
             Bitcast { dest, .. } |
-            GetElementPtr { dest, src: _, args: _ } => {
+            GetElementPtr { dest, .. } => {
                 res = cmp::max(res, dest.1.counter.clone());
             }
 
-            Compare { dest_reg, op: _, ty: _, val_lhs: _, val_rhs: _ } => {
+            Compare { dest_reg, .. } => {
                 res = cmp::max(res, dest_reg.counter.clone());
             },
 
-            Call { dest_reg, ret_ty: _, name: _, args: _ } => {
+            Call { dest_reg, .. } => {
                 if let Some(reg) = dest_reg {
                     res = cmp::max(res, reg.counter.clone());
                 }
             },
 
             ReturnVoid |
-            Return { ty: _, val: _ } |
+            Return { .. } |
             Unreachable |
             Branch(_) |
-            Label { val: _, preds: _ } => {},
+            Label { .. } => {},
         }
     }
 
@@ -308,10 +308,9 @@ impl SSATransformer {
         let mut new_instrs = vec![];
         for i in instrs {
             match i.clone() {
-                // memory instructions are no longer needed
-                Alloc { dest: _ } => {},
+                Alloc { .. } => {},
 
-                Load { src, dest: _ } => {
+                Load { src, .. } => {
                     if !self.variables_versions.contains_key(&src.1) {
                         new_instrs.push(i.clone());
                     }
@@ -328,8 +327,8 @@ impl SSATransformer {
 
                 ReturnVoid |
                 Unreachable |
-                Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } |
+                Branch(LLVM::Branch::Direct { .. }) |
+                Label { .. } |
                 Sext { .. } => {
                     new_instrs.push(i.clone());
                 },

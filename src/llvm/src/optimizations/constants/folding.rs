@@ -50,12 +50,12 @@ impl Optimizer {
         for i in instrs {
             let new_instr: LLVM::Instr;
             match i.clone() {
-                Alloc { dest: _ } |
+                Alloc { .. } |
                 ReturnVoid |
                 Unreachable |
-                Load { src: _, dest: _ } |
-                Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } |
+                Load { .. } |
+                Branch(LLVM::Branch::Direct { .. }) |
+                Label { .. } |
                 Bitcast { .. } => {
                     new_instr = i.clone();
                 },
@@ -262,7 +262,7 @@ impl Optimizer {
     }
 
     fn optimize_value(&mut self, value: &LLVM::Value) -> LLVM::Value {
-        if let LLVM::Value::Register(LLVM::Register { prefix: _, counter: _, name }) = value.clone() {
+        if let LLVM::Value::Register(LLVM::Register { name, .. }) = value.clone() {
             if let Some(new_val) = self.values.get(&name) {
                 return new_val.clone().into();
             }

@@ -67,7 +67,7 @@ impl Optimizer {
                     Branch(LLVM::Branch::Direct { label }) => {
                         self.used_blocks.insert(label.clone(), true);
                     },
-                    Branch(LLVM::Branch::Conditional { ty: _, val: _, true_label, false_label }) => {
+                    Branch(LLVM::Branch::Conditional { true_label, false_label, .. }) => {
                         self.used_blocks.insert(true_label.clone(), true);
                         self.used_blocks.insert(false_label.clone(), true);
                     },

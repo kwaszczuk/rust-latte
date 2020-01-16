@@ -194,7 +194,7 @@ impl SemanticError {
                     format!("missing return in the function `{}` body", ident),
                     Label::new(f_id, loc, format!("return expected after this statement")),
                 ),
-            IntegerOverflow { value: _, loc } =>
+            IntegerOverflow { loc, .. } =>
                 Diagnostic::new_error(
                     format!("integer overflow"),
                     Label::new(f_id, loc, format!("`int` value range is from -2147483648 to 2147483647")),

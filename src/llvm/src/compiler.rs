@@ -68,7 +68,7 @@ impl LLVMCompiler {
     }
 
     fn add_instr(&mut self, instr: LLVM::Instr) {
-        if let LLVM::Instr::Label { val, preds: _ } = &instr {
+        if let LLVM::Instr::Label { val, .. } = &instr {
             // when starting new block, make sure it won't be empty by
             // putting `unreachable` instruction
             self._instrs.push(instr.clone());
@@ -281,7 +281,7 @@ impl LLVMCompiler {
                 self.compile_block(&block);
             },
 
-            Decl { ty, ty_loc: _, items } => {
+            Decl { ty, items, .. } => {
                 for item in items {
                     let item_reg = self.next_register();
                     let item_ty = LLVM::Type::from(ty.clone());
@@ -342,7 +342,7 @@ impl LLVMCompiler {
                 self.compile_incr_decr(&lval, ArithmOp::Sub);
             },
 
-            Ret { value, ret_loc: _ } => {
+            Ret { value, .. } => {
                 match &value {
                     Some(expr) => {
                         let (ret_ty, ret_val) = self.compile_expression(&expr);
@@ -519,7 +519,7 @@ impl LLVMCompiler {
         use ast::LValueTypes::*;
 
         match &lval.value {
-            Var { ident, ident_loc: _ } => {
+            Var { ident, .. } => {
                 let var = self.symbol_table.get(&ident).unwrap();
                 (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
             },
@@ -640,7 +640,7 @@ impl LLVMCompiler {
                 (LLVM::Type::Int1, ret_reg.clone().into())
             },
 
-            ERel { op, op_loc: _, expr1, expr2 } => {
+            ERel { op, expr1, expr2, .. } => {
                 let (ty1, val1) = self.compile_expression(&expr1);
                 let (ty2, val2) = self.compile_expression(&expr2);
                 assert_eq!(ty1, ty2);
@@ -685,8 +685,8 @@ impl LLVMCompiler {
                 (LLVM::Type::Int1, ret_reg.clone().into())
             },
 
-            EAdd { op, op_loc: _, expr1, expr2 } |
-            EMul { op, op_loc: _, expr1, expr2 } => {
+            EAdd { op, expr1, expr2, .. } |
+            EMul { op, expr1, expr2, .. } => {
                 let (ty1, val1) = self.compile_expression(&expr1);
                 let (ty2, val2) = self.compile_expression(&expr2);
                 assert_eq!(ty1, ty2);
@@ -781,7 +781,7 @@ impl LLVMCompiler {
                 (LLVM::Type::Int1, LLVM::Const::False.into())
             },
 
-            EApp { ident, ident_loc: _, args, args_loc: _ } => {
+            EApp { ident, args, .. } => {
                 let var = self.symbol_table.get(&ident).unwrap();
 
                 let args_expr = args.iter().map(|a| self.compile_expression(&a)).collect();
@@ -832,7 +832,7 @@ impl LLVMCompiler {
             },
 
 
-            ENew { ty, ty_loc: _, len_expr } => {
+            ENew { ty, len_expr, .. } => {
                 let arr_ty: LLVM::Type = ty.into();
                 let entry_ty = arr_ty.deref_ptr().unwrap();
                 let (_, len_val) = self.compile_expression(&len_expr);

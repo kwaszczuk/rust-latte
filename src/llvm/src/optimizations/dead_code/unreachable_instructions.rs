@@ -46,23 +46,23 @@ impl Optimizer {
         let mut new_instrs = vec![];
         for i in &b.instrs {
             match i {
-                Alloc { dest: _ } |
-                Load { src: _, dest: _ } |
-                Store { src: _, dest: _ } |
-                Phi { dest: _, preds: _ } |
-                Arithm { dest: _, op: _, val_lhs: _, val_rhs: _ } |
-                GetElementPtr { dest: _, src: _, args: _ } |
-                Compare { dest_reg: _, op: _, ty: _, val_lhs: _, val_rhs: _ } |
-                Call { dest_reg: _, ret_ty: _, name: _, args: _ } |
+                Alloc { .. } |
+                Load { .. } |
+                Store { .. } |
+                Phi { .. } |
+                Arithm { .. } |
+                GetElementPtr { .. } |
+                Compare { .. } |
+                Call { .. } |
                 Unreachable |
-                Branch(LLVM::Branch::Direct { label: _ }) |
-                Label { val: _, preds: _ } |
+                Branch(LLVM::Branch::Direct { .. }) |
+                Label { .. } |
                 Sext { .. } |
                 Bitcast { .. } => {
                     new_instrs.push(i.clone());
                 },
 
-                Branch(LLVM::Branch::Conditional { ty: _, val, true_label, false_label }) => {
+                Branch(LLVM::Branch::Conditional { val, true_label, false_label, .. }) => {
                     match val {
                         LLVM::Value::Const(LLVM::Const::True) => {
                             new_instrs.push(Branch(LLVM::Branch::Direct {
@@ -83,7 +83,7 @@ impl Optimizer {
                     break;
                 },
 
-                Return { ty: _, val: _ } |
+                Return { .. } |
                 ReturnVoid => {
                     new_instrs.push(i.clone());
                     break;
@@ -109,7 +109,7 @@ impl Optimizer {
                         Branch(LLVM::Branch::Direct { label }) => {
                             jumps.insert((b.label.clone(), label.clone()), true);
                         },
-                        Branch(LLVM::Branch::Conditional { ty: _, val: _, true_label, false_label }) => {
+                        Branch(LLVM::Branch::Conditional { true_label, false_label, .. }) => {
                             jumps.insert((b.label.clone(), true_label.clone()), true);
                             jumps.insert((b.label.clone(), false_label.clone()), true);
                         },

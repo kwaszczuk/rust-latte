@@ -130,8 +130,8 @@ impl Type {
             Ptr(_) => Const::Null.into(),
 
             Void |
-            Fun { ret_ty: _ } |
-            Array { ty: _, len: _ } => {
+            Fun { .. } |
+            Array { .. } => {
                 panic!("no default value for this type");
             },
         }
@@ -148,8 +148,8 @@ impl Type {
             Ptr(_) => ADDRESS_TYPE.byte_size(),
 
             Void |
-            Fun { ret_ty: _ } |
-            Array { ty: _, len: _ } => {
+            Fun { .. } |
+            Array { .. } => {
                 panic!("size_of not supported for this type");
             },
         }
@@ -208,7 +208,7 @@ impl fmt::Display for Type {
             Int1 => write!(f, "i1"),
             Ptr(t) => write!(f, "{}*", t),
             Void => write!(f, "void"),
-            Fun { ret_ty: _ } => {
+            Fun { .. } => {
                 panic!("no display implementation for fun type")
             },
             Array { ty, len } => write!(f, "[ {} x {} ]", len, ty),
@@ -401,7 +401,7 @@ impl fmt::Display for Instr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Instr::*;
         match self {
-            Label { val, preds: _ } => write!(f, "{}:", val.name),
+            Label { val, .. } => write!(f, "{}:", val.name),
             Load { src, dest } => write!(
                 f, "{} = load {}, {} {}",
                 dest.1, dest.0, src.0, src.1

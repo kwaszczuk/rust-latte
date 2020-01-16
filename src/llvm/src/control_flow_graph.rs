@@ -58,7 +58,7 @@ fn branches_to(block: &LLVM::Block) -> Vec<LLVM::Label> {
                 ret.push(label.clone());
                 break;
             },
-            Branch(LLVM::Branch::Conditional { ty: _, val: _, true_label, false_label }) => {
+            Branch(LLVM::Branch::Conditional { true_label, false_label, .. }) => {
                 ret.push(true_label.clone());
                 ret.push(false_label.clone());
                 break;

@@ -3,6 +3,7 @@ use std::collections::{HashMap};
 use crate::instructions as LLVM;
 use crate::optimizations::base;
 use crate::control_flow_graph::{generate_graph, CFGNode, ControlFlowGraph};
+use crate::utils::{blocks_to_instructions, instructions_to_blocks};
 
 fn is_node_backward_reducible(node: &CFGNode, cfg: &ControlFlowGraph) -> bool {
     if node.prevs.len() == 1 {
@@ -32,12 +33,14 @@ fn is_node_forward_reducible(node: &CFGNode, _cfg: &ControlFlowGraph) -> bool {
 
 pub struct Optimizer {
     join_with: HashMap<LLVM::Label, LLVM::Label>,
+    replaced_labels: HashMap<LLVM::Label, LLVM::Label>,
 }
 
 impl Optimizer {
     pub fn new() -> Self {
         Optimizer {
             join_with: HashMap::new(),
+            replaced_labels: HashMap::new(),
         }
     }
 
@@ -60,7 +63,8 @@ impl Optimizer {
         self.join_with.clear();
         self.find_reducibles(&cfg);
 
-        let new_body = self.join_blocks(&fun.body);
+        let mut new_body = self.join_blocks(&fun.body);
+        new_body = self.fix_phis(&new_body);
 
         LLVM::Function {
             ret_ty: fun.ret_ty.clone(),
@@ -99,6 +103,7 @@ impl Optimizer {
                         if let Some(LLVM::Instr::Branch(_)) = new_instrs.last() {
                             new_instrs.pop();
                         }
+                        self.replaced_labels.insert(label2.clone(), label1.clone());
                         new_instrs.extend(block2.instrs.clone());
                         blocks_map.remove(&next_label);
                     }
@@ -120,6 +125,38 @@ impl Optimizer {
         }
 
         new_blocks
+    }
+
+    fn fix_phis(&mut self, blocks: &Vec<LLVM::Block>) -> Vec<LLVM::Block> {
+        let fix_label = |p| {
+            match self.replaced_labels.get(&p) {
+                Some(v) => v.clone(),
+                None => p.clone(),
+            }
+        };
+
+        let instrs = blocks_to_instructions(blocks);
+        let mut new_instrs = vec![];
+        for i in instrs {
+            match i {
+                LLVM::Instr::Phi { dest, preds } => {
+                    let new_preds = preds.iter()
+                        .map(|p| (p.0.clone(), fix_label(p.1.clone())))
+                        .collect();
+
+                    new_instrs.push(LLVM::Instr::Phi {
+                        dest,
+                        preds: new_preds,
+                    });
+                },
+
+                _ => {
+                    new_instrs.push(i.clone());
+                }
+            }
+        }
+
+        instructions_to_blocks(&new_instrs)
     }
 
 }

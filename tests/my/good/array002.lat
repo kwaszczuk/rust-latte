@@ -1,0 +1,12 @@
+int main() {
+  int[] t = new int[10];
+  int i = 0;
+  for (int x: t) {
+    x = i;
+    i++;
+  }
+  for (int x: t) {
+    printInt(x);
+  }
+  return 0;
+}

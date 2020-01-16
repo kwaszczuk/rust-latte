@@ -472,24 +472,44 @@ impl SemanticAnalyzer {
                 Ok(var.ty.clone())
             },
 
-            ArrAt { arr_expr, idx_expr } => {
+            ArrAt { arr_expr, idx_exprs } => {
                 let exp_idx_ty = Simple(Int);
-                analyse_expr_and_match_type![self, idx_expr, exp_idx_ty, idx_expr.all_loc];
-
-                if let Ok(ty) = self.analyse_expression(&arr_expr) {
-                    match ty {
-                        Simple(Array(elem_ty)) => {
-                            return Ok(VarType::Simple(*elem_ty.clone()))
-                        },
-                        _ => {
-                            self.throw(TypeError(NotAnArray {
-                                ty: ty.clone(),
-                                loc: arr_expr.all_loc.clone(),
-                            }));
-                        },
-                    };
+                for idx_expr in &*idx_exprs {
+                    analyse_expr_and_match_type![
+                        self,
+                        &*idx_expr.value,
+                        exp_idx_ty,
+                        idx_expr.value.all_loc
+                    ];
                 }
 
+                if let Ok(ty) = self.analyse_expression(&arr_expr) {
+                    if let Simple(Array(elem_ty)) = ty {
+                        let mut final_ty = Array(elem_ty.clone());
+                        let mut final_loc = arr_expr.all_loc.clone();
+                        for idx_expr in &*idx_exprs {
+                            match &final_ty {
+                                Array(ty) => {
+                                    final_ty = *ty.clone();
+                                    final_loc.end = idx_expr.all_loc.end.clone();
+                                },
+                                _ => {
+                                    self.throw(TypeError(NotAnArray {
+                                        ty: Simple(final_ty.clone()),
+                                        loc: final_loc,
+                                    }));
+                                    return Err(());
+                                },
+                            };
+                        }
+                        return Ok(VarType::Simple(final_ty.clone()));
+                    }
+
+                    self.throw(TypeError(NotAnArray {
+                        ty: ty.clone(),
+                        loc: arr_expr.all_loc.clone(),
+                    }));
+                }
                 Err(())
             },
         }

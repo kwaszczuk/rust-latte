@@ -68,13 +68,36 @@ pub LValue: ast::LValue = {
   },
 
   <_beg: @L>
-      <arr_expr: Expr7> "[" <idx_expr: Expr> "]"
-  <_end: @R> => ast::LValue {
-      all_loc: Location::new(_beg, _end),
-      value: ast::LValueTypes::ArrAt {
-          arr_expr: Box::new(arr_expr),
-          idx_expr: Box::new(idx_expr),
-      },
+      <arr_expr: Expr7> <loc_1: @L> "[" <idx_expr: Expr> "]" <loc_2: @R>
+  <_end: @R> => {
+      if let ast::ExprTypes::ELValue { lval } = arr_expr.value.clone() {
+          if let ast::LValueTypes::ArrAt { arr_expr, mut idx_exprs } = lval.value.clone() {
+              idx_exprs.push(ast::ArrAtIdx {
+                  all_loc: Location::new(loc_1, loc_2),
+                  value: Box::new(idx_expr),
+              });
+              return ast::LValue {
+                  all_loc: Location::new(_beg, _end),
+                  value: ast::LValueTypes::ArrAt {
+                      arr_expr: arr_expr.clone(),
+                      idx_exprs: idx_exprs.clone(),
+                  },
+              };
+          }
+      }
+
+      ast::LValue {
+          all_loc: Location::new(_beg, _end),
+          value: ast::LValueTypes::ArrAt {
+              arr_expr: Box::new(arr_expr.clone()),
+              idx_exprs: vec![
+                  ast::ArrAtIdx {
+                      all_loc: Location::new(loc_1, loc_2),
+                      value: Box::new(idx_expr),
+                  },
+              ],
+          },
+      }
   },
 };
 

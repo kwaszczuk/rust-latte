@@ -1,0 +1,21 @@
+int main() {
+  int[][] t = new int[][5];
+
+  int k = 0, l = 0;
+  for (int[] st: t) {
+    k++;
+    st = new int[k];
+    for (int x: st) {
+      l++;
+      x = l;
+    }
+  }
+
+  for (int[] st: t) {
+    for (int x: st) {
+      printInt(x);
+    }
+  }
+
+  return 0;
+}

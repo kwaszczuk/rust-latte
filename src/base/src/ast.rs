@@ -12,6 +12,7 @@ pub enum Type {
 }
 
 pub type LValue = Located<LValueTypes>;
+pub type ArrAtIdx = Located<Box<Expr>>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum LValueTypes {
@@ -21,7 +22,7 @@ pub enum LValueTypes {
     },
     ArrAt {
         arr_expr: Box<Expr>,
-        idx_expr: Box<Expr>,
+        idx_exprs: Vec<ArrAtIdx>,
     },
 
 }

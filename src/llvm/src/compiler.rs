@@ -2,7 +2,7 @@ use std::collections::{HashMap};
 use crate::instructions as LLVM;
 use crate::operators::{Operator, ArithmOp, RelOp};
 use base::ast;
-use base::types::{Labeler, Location};
+use base::types::{Labeler};
 use base::symbol_table::{SymbolTable};
 use crate::utils::{length_after_escape, instructions_to_blocks};
 
@@ -433,29 +433,57 @@ impl LLVMCompiler {
                 self.add_instr(continue_block_label.into());
             },
 
-            ForEach { ty, ident, expr, block, .. } => {
+            ForEach { ident, expr, block, .. } => {
                 let (arr_ty, arr_val) = self.compile_expression(&expr);
                 let (_len_ty, arr_len_reg) = self.compile_array_length(
                     (&arr_ty.clone(), &arr_val.clone())
                 );
 
-                let previous_block_label = self._current_block_label.clone();
+                let entry_block_label = self._current_block_label.clone();
                 let conditional_block_label = self.next_label();
                 let loop_block_label = self.next_label();
                 let continue_block_label = self.next_label();
+                let idx_reg = self.next_register();
 
                 self.add_instr(LLVM::Branch::Direct {
                     label: conditional_block_label.clone(),
                 }.into());
+
+                // generate loop body, so that that last block will be known properly
+                self.add_instr(loop_block_label.clone().into());
+                self.symbol_table.begin_scope();
+                {
+                    // read iterator value
+                    let (_entry_ty, entry_reg) = self.compile_array_at(
+                        (&arr_ty.clone(), &arr_val.clone()),
+                        vec![idx_reg.clone().into()],
+                    );
+                    self.symbol_table.insert(
+                        ident.clone(),
+                        SymbolTableEntity::new(
+                            arr_ty.deref_ptr().unwrap().clone(),
+                            entry_reg.clone()
+                        )
+                    );
+
+                    // process ForEach body
+                    self.compile_block(&block);
+                }
+                self.symbol_table.end_scope();
+
+                self.add_instr(LLVM::Branch::Direct {
+                    label: conditional_block_label.clone(),
+                }.into());
+
+                let last_loop_block_label = self._current_block_label.clone();
                 self.add_instr(conditional_block_label.clone().into());
 
-                let idx_reg = self.next_register();
                 let idx_inc_reg = self.next_register();
                 self.add_instr(LLVM::Instr::Phi {
                     dest: (LLVM::Type::Int32, idx_reg.clone()),
                     preds: vec![
-                        (LLVM::Const::from(0).into(), previous_block_label.clone()),
-                        (idx_inc_reg.clone().into(), loop_block_label.clone()),
+                        (LLVM::Const::from(0).into(), entry_block_label.clone()),
+                        (idx_inc_reg.clone().into(), last_loop_block_label.clone()),
                     ],
                 });
 
@@ -482,30 +510,6 @@ impl LLVMCompiler {
                     false_label: continue_block_label.clone(),
                 }.into());
 
-                self.add_instr(loop_block_label.into());
-                self.symbol_table.begin_scope();
-                {
-                    // read iterator value
-                    let (entry_ty, entry_reg) = self.compile_array_at(
-                        (&arr_ty.clone(), &arr_val.clone()),
-                        &idx_reg.clone().into()
-                    );
-                    self.symbol_table.insert(
-                        ident.clone(),
-                        SymbolTableEntity::new(
-                            arr_ty.deref_ptr().unwrap().clone(),
-                            entry_reg.clone()
-                        )
-                    );
-
-                    // process ForEach body
-                    self.compile_block(&block);
-                }
-                self.symbol_table.end_scope();
-
-                self.add_instr(LLVM::Branch::Direct {
-                    label: conditional_block_label.clone(),
-                }.into());
                 self.add_instr(continue_block_label.into());
             },
 
@@ -524,16 +528,18 @@ impl LLVMCompiler {
                 (LLVM::Type::new_ptr(var.ty.clone()), var.reg.clone())
             },
 
-            ArrAt { arr_expr, idx_expr } => {
-                let (_idx_ty, idx_val) = self.compile_expression(&idx_expr);
+            ArrAt { arr_expr, idx_exprs } => {
+                let idx_vals: Vec<LLVM::Value> = idx_exprs.iter()
+                    .map(|idx_expr| self.compile_expression(&idx_expr.value).1)
+                    .collect();
                 let (arr_ty, arr_ptr) = self.compile_expression(&arr_expr);
 
                 let (entry_ty, entry_ptr_reg) = self.compile_array_at(
                     (&arr_ty.clone(), &arr_ptr.clone()),
-                    &idx_val,
+                    idx_vals,
                 );
 
-                (arr_ty.clone(), entry_ptr_reg)
+                (entry_ty.clone(), entry_ptr_reg)
             },
         }
     }
@@ -897,14 +903,13 @@ impl LLVMCompiler {
         }
     }
 
-    fn compile_array_at(&mut self, (arr_ty, arr_ptr): (&LLVM::Type, &LLVM::Value), idx: &LLVM::Value) -> (LLVM::Type, LLVM::Register) {
+    fn compile_array_length_skip(&mut self, (arr_ty, arr_ptr): (&LLVM::Type, &LLVM::Value)) -> LLVM::Value {
             let arr_ptr_i8 = self.next_register();
             self.add_instr(LLVM::Instr::Bitcast {
                 dest: (LLVM::Type::new_ptr(LLVM::DEFAULT_ARRAY_TYPE.clone()), arr_ptr_i8.clone()),
                 src: (arr_ty.clone(), arr_ptr.clone()),
             });
 
-            // skip length field
             let data_ptr_i8 = self.next_register();
             self.add_instr(LLVM::Instr::GetElementPtr {
                 dest: (LLVM::DEFAULT_ARRAY_TYPE.clone(), data_ptr_i8.clone()),
@@ -920,17 +925,41 @@ impl LLVMCompiler {
                 dest: (arr_ty.clone(), data_ptr.clone()),
                 src: (LLVM::Type::new_ptr(LLVM::DEFAULT_ARRAY_TYPE.clone()), data_ptr_i8.clone().into()),
             });
+            data_ptr.clone().into()
+    }
 
-            let entry_ptr_reg = self.next_register();
+    fn compile_array_at(&mut self, (arr_ty, arr_ptr): (&LLVM::Type, &LLVM::Value), idxs: Vec<LLVM::Value>) -> (LLVM::Type, LLVM::Register) {
+            let mut final_ty = arr_ty.clone();
+            let mut entry_ptr_reg = arr_ptr.clone();
+            for i in 0..(idxs.len()-1) {
+                let next_ty = final_ty.deref_ptr().unwrap();
+                entry_ptr_reg = self.compile_array_length_skip((&final_ty, &entry_ptr_reg));
+
+                let tmp_reg_1 = self.next_register();
+                self.add_instr(LLVM::Instr::GetElementPtr {
+                    dest: (next_ty.clone(), tmp_reg_1.clone()),
+                    src: (final_ty.clone(), entry_ptr_reg.clone().into()),
+                    args: vec![(LLVM::Type::Int32, idxs[i].clone())],
+                });
+
+                let tmp_reg_2 = self.next_register();
+                self.add_instr(LLVM::Instr::Load {
+                    dest: (next_ty.clone(), tmp_reg_2.clone()),
+                    src: (final_ty.clone(), tmp_reg_1.clone()),
+                });
+                entry_ptr_reg = tmp_reg_2.clone().into();
+                final_ty = next_ty.clone();
+            }
+
+            entry_ptr_reg = self.compile_array_length_skip((&final_ty, &entry_ptr_reg));
+            let final_reg = self.next_register();
             self.add_instr(LLVM::Instr::GetElementPtr {
-                dest: (arr_ty.deref_ptr().unwrap(), entry_ptr_reg.clone()),
-                src: (arr_ty.clone(), data_ptr.clone().into()),
-                args: vec![
-                    (LLVM::Type::Int32, idx.clone()),
-                ],
+                dest: (final_ty.deref_ptr().unwrap(), final_reg.clone()),
+                src: (final_ty.clone(), entry_ptr_reg.clone().into()),
+                args: vec![(LLVM::Type::Int32, idxs.last().unwrap().clone())],
             });
 
-            (arr_ty.clone(), entry_ptr_reg)
+            (final_ty, final_reg)
     }
 
     fn compile_array_length(&mut self, (arr_ty, arr_ptr): (&LLVM::Type, &LLVM::Value)) -> (LLVM::Type, LLVM::Register) {

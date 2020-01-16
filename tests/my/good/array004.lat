@@ -1,0 +1,53 @@
+string intToString(int x) {
+  if (x == 0) {
+    return "0";
+  }
+
+  string ret = "";
+  while (x != 0) {
+    int last_digit = x % 10;
+    x = x / 10;
+    if (last_digit == 0) ret = "0" + ret;
+    if (last_digit == 1) ret = "1" + ret;
+    if (last_digit == 2) ret = "2" + ret;
+    if (last_digit == 3) ret = "3" + ret;
+    if (last_digit == 4) ret = "4" + ret;
+    if (last_digit == 5) ret = "5" + ret;
+    if (last_digit == 6) ret = "6" + ret;
+    if (last_digit == 7) ret = "7" + ret;
+    if (last_digit == 8) ret = "8" + ret;
+    if (last_digit == 9) ret = "9" + ret;
+  }
+  return ret;
+}
+
+string[][] prepare() {
+  string[][] t = new string[][4];
+  int i = 0;
+  for (string[] st: t) {
+    int j = 0;
+    st = new string[4];
+    for (string s: st) {
+      s = intToString(i) + intToString(j);
+      j++;
+    }
+    i++;
+  }
+
+  return t;
+}
+
+int main() {
+  string[][] t = prepare();
+
+  int i = 0;
+  while (i < t.length) {
+    int j = 0;
+    while (j < t[i].length) {
+      printString(t[i][j]);
+      j++;
+    }
+    i++;
+  }
+  return 0;
+}

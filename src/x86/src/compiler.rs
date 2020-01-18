@@ -4,18 +4,14 @@ use crate::instructions as X86;
 use llvm::instructions as LLVM;
 use crate::operators::{ArithmOp, RelOp};
 use base::types::{Labeler};
+use X86::{DEFAULT_TYPE, DEFAULT_WORD_SIZE, DEFAULT_ARGS_OFFSET};
 
 use std::panic;
-
-static DEFAULT_WORD_SIZE: i32 = 8;
-static DEFAULT_TYPE: X86::Type = X86::Type::Quad;
-
-static DEFAULT_ARGS_OFFSET: i32 = 16;
 
 pub struct X86Compiler {
     label_generator: Labeler<X86::Label>,
     statics_map: HashMap<LLVM::Static, X86::Static>,
-    registers_map: HashMap<LLVM::Register, X86::Storage>,
+    registers_map: HashMap<LLVM::Register, X86::Value>,
     labels_map: HashMap<LLVM::Label, X86::Label>,
     function_counter: usize,
     fin_label: X86::Label,
@@ -76,32 +72,39 @@ impl X86Compiler {
             label: X86::Label::new("".to_string(), 0),
             instrs: {
                 let mut ret = vec![
-                    Push { ty: DEFAULT_TYPE.clone(), src: RBP.into() },
-                    Move { ty: DEFAULT_TYPE.clone(), src: RSP.into(), dest: RBP.into() },
+                    Push {
+                        ty: DEFAULT_TYPE.clone(),
+                        src: TypedRegister::default(RBP).into()
+                    },
+                    Move {
+                        ty: DEFAULT_TYPE.clone(),
+                        src: TypedRegister::default(RSP).into(),
+                        dest: TypedRegister::default(RBP).into(),
+                    },
                     Arithm {
                         ty: DEFAULT_TYPE.clone(),
                         op: ArithmOp::Sub.into(),
-                        src: Value::Const(align(var_cnt * DEFAULT_WORD_SIZE, 16)),
-                        dest: RSP.into()
+                        src: align(var_cnt * DEFAULT_WORD_SIZE, 16).into(),
+                        dest: TypedRegister::default(RSP).into(),
                     },
                 ];
                 for i in 0..fun.args.len() {
                     if i < 6 {
                         let src = match i {
-                            0 => Register::RDI.into(),
-                            1 => Register::RSI.into(),
-                            2 => Register::RDX.into(),
-                            3 => Register::RCX.into(),
-                            4 => Register::R8.into(),
-                            5 => Register::R9.into(),
+                            0 => TypedRegister::default(RDI).into(),
+                            1 => TypedRegister::default(RSI).into(),
+                            2 => TypedRegister::default(RDX).into(),
+                            3 => TypedRegister::default(RCX).into(),
+                            4 => TypedRegister::default(R8).into(),
+                            5 => TypedRegister::default(R9).into(),
                             _ => { panic!("should not happen") },
                         };
                         ret.push(Move {
                             ty: DEFAULT_TYPE.clone(),
                             src,
-                            dest: X86::Memory {
-                                offset: -(i as i32 + 1) * DEFAULT_WORD_SIZE,
-                            }.into(),
+                            dest: X86::Storage::new_stack_memory(
+                                -(i as i32 + 1) * DEFAULT_WORD_SIZE
+                            ).into(),
                         });
                     }
                 }
@@ -116,10 +119,13 @@ impl X86Compiler {
                 Arithm {
                     ty: DEFAULT_TYPE.clone(),
                     op: ArithmOp::Add.into(),
-                    src: Value::Const(align(var_cnt * DEFAULT_WORD_SIZE, 16)),
-                    dest: RSP.into()
+                    src: align(var_cnt * DEFAULT_WORD_SIZE, 16).into(),
+                    dest: TypedRegister::default(RSP).into(),
                 },
-                Pop { ty: DEFAULT_TYPE.clone(), dest: RBP.into() },
+                Pop {
+                    ty: DEFAULT_TYPE.clone(),
+                    dest: TypedRegister::default(RBP).into(),
+                },
                 Return,
             ],
         };
@@ -147,13 +153,11 @@ impl X86Compiler {
             let store: X86::Storage = match i {
                 0..=5 => {
                     cnt += 1;
-                    X86::Memory {
-                        offset: -cnt * DEFAULT_WORD_SIZE,
-                    }.into()
+                    X86::Storage::new_stack_memory(-cnt * DEFAULT_WORD_SIZE).into()
                 },
-                _ => X86::Memory {
-                    offset: DEFAULT_ARGS_OFFSET + (i as i32 - 6) * DEFAULT_WORD_SIZE,
-                }.into(),
+                _ => X86::Storage::new_stack_memory(
+                    DEFAULT_ARGS_OFFSET + (i as i32 - 6) * DEFAULT_WORD_SIZE
+                ).into(),
             };
             self.registers_map.insert(
                 LLVM::Register::new("".to_string(), i),
@@ -165,37 +169,57 @@ impl X86Compiler {
             for i in &b.instrs {
                 match i {
                     Alloc { .. } |
+                    Return { .. } |
                     ReturnVoid |
                     Unreachable |
-                    Load { .. } |
                     Branch(_) |
                     Store { .. } |
-                    Return { .. } |
                     Label { .. } => {},
+
+                    Bitcast { dest, src } |
+                    Sext { dest, src } => {
+                        match &src.1 {
+                            LLVM::Value::Const(c) => {
+                                if let LLVM::Const::Int(ci) = c {
+                                    self.registers_map.insert(dest.1.clone(), ci.clone().into());
+                                } else {
+                                    panic!("should not happen")
+                                }
+                            },
+                            LLVM::Value::Register(r) => {
+                                let val = self.registers_map.get(&r).unwrap().clone();
+                                self.registers_map.insert(dest.1.clone(), val);
+                            },
+                            LLVM::Value::Static(_) => {
+                                panic!("should not happen")
+                            },
+                        }
+                    },
 
                     Compare { dest_reg, .. } => {
                         cnt += 1;
-                        self.registers_map.insert(dest_reg.clone(), X86::Memory {
-                            offset: -cnt * DEFAULT_WORD_SIZE,
-                        }.into());
+                        self.registers_map.insert(dest_reg.clone(), X86::Storage::new_stack_memory(
+                            -cnt * DEFAULT_WORD_SIZE
+                        ).into());
                     },
 
                     Call { dest_reg, .. } => {
                         if let Some(reg) = dest_reg {
                             cnt += 1;
-                            self.registers_map.insert(reg.clone(), X86::Memory {
-                                offset: -cnt * DEFAULT_WORD_SIZE,
-                            }.into());
+                            self.registers_map.insert(reg.clone(), X86::Storage::new_stack_memory(
+                                -cnt * DEFAULT_WORD_SIZE
+                            ).into());
                         }
                     },
 
                     Phi { dest, .. } |
+                    Load { dest, .. } |
                     GetElementPtr { dest, .. } |
                     Arithm { dest, .. } => {
                         cnt += 1;
-                        self.registers_map.insert(dest.1.clone(), X86::Memory {
-                            offset: -cnt * DEFAULT_WORD_SIZE,
-                        }.into());
+                        self.registers_map.insert(dest.1.clone(), X86::Storage::new_stack_memory(
+                            -cnt * DEFAULT_WORD_SIZE
+                        ).into());
                     },
                 }
             }
@@ -250,36 +274,38 @@ impl X86Compiler {
     fn compile_block(&mut self, block: &LLVM::Block) -> X86::Block {
         use X86::*;
         use X86::Instr::*;
+        use Register::*;
 
         let mut new_instrs = vec![];
 
-        let replace_register = |r| self.registers_map.get(&r).unwrap_or_else(|| { println!("{:?}", r); panic!("replace") }).clone();
+        let replace_register = |r| self.registers_map.get(&r).unwrap().clone();
         let cast_value_to_value = |val: &LLVM::Value| -> X86::Value {
             match val {
                 LLVM::Value::Const(c) => c.clone().into(),
-                LLVM::Value::Register(r) => replace_register(r.clone()).into(),
+                LLVM::Value::Register(r) => replace_register(r.clone()),
                 LLVM::Value::Static(_) => {
                     panic!("should not happen")
                 },
             }
         };
-        let cast_value_to_value_with_rax = |val: &LLVM::Value, instrs: &mut Vec<X86::Instr>| -> X86::Value {
+        let cast_value_to_value_with_reg = |ty: &Type, val: &LLVM::Value, reg: Register, instrs: &mut Vec<X86::Instr>| -> X86::Value {
+            let final_reg = TypedRegister::new(ty.clone(), reg);
             match val {
                 LLVM::Value::Const(c) =>  {
                     instrs.push(Move {
-                        ty: DEFAULT_TYPE.clone(),
+                        ty: ty.clone(),
                         src: c.clone().into(),
-                        dest: Register::RAX.into(),
+                        dest: final_reg.clone().into(),
                     });
-                    Register::RAX.clone().into()
+                    final_reg.clone().into()
                 },
                 LLVM::Value::Register(r) => {
                     instrs.push(Move {
-                        ty: DEFAULT_TYPE.clone(),
+                        ty: ty.clone(),
                         src: replace_register(r.clone()).into(),
-                        dest: Register::RAX.into(),
+                        dest: final_reg.clone().into(),
                     });
-                    Register::RAX.clone().into()
+                    final_reg.clone().into()
                 }
                 LLVM::Value::Static(_) => {
                     panic!("should not happen")
@@ -289,9 +315,7 @@ impl X86Compiler {
 
         for i in &block.instrs {
             match i {
-                LLVM::Instr::Alloc { .. } |
-                LLVM::Instr::Store { .. } |
-                LLVM::Instr::Load { .. } => {
+                LLVM::Instr::Alloc { .. } => {
                     panic!("x86 compilation require LLVM in SSA format")
                 },
                 LLVM::Instr::Label { .. } => {
@@ -300,12 +324,84 @@ impl X86Compiler {
 
                 LLVM::Instr::Unreachable => {},
 
+                LLVM::Instr::Bitcast { .. } => {},
+
+                LLVM::Instr::Sext { dest, src } => {
+                    if let LLVM::Value::Register(r) = &src.1 {
+                        let val = self.registers_map.get(&r).unwrap().clone();
+                        if let Value::Storage(Storage::Memory(_)) = &val {
+                            new_instrs.push(Move {
+                                ty: DEFAULT_TYPE.clone(),
+                                src: val.clone(),
+                                dest: TypedRegister::default(RAX).into(),
+                            });
+                            new_instrs.push(Move {
+                                ty: DEFAULT_TYPE.clone(),
+                                src: 0.into(),
+                                dest: val.clone().into(),
+                            });
+                            new_instrs.push(Move {
+                                ty: Type::Double,
+                                src: TypedRegister::new(Type::Double, RAX).into(),
+                                dest: val.clone().into(),
+                            });
+                        }
+                    }
+                },
+
+                LLVM::Instr::Load { dest, src } => {
+                    let x86_dest_ty: Type = dest.0.clone().into();
+                    new_instrs.push(Move {
+                        ty: DEFAULT_TYPE.clone(),
+                        src: replace_register(src.1.clone()),
+                        dest: TypedRegister::default(RAX).into(),
+                    });
+
+                    new_instrs.push(Move {
+                        ty: x86_dest_ty.clone(),
+                        src: Memory::from(TypedRegister::default(RAX)).into(),
+                        dest: TypedRegister::new(x86_dest_ty.clone(), RAX).into(),
+                    });
+
+                    new_instrs.push(Move {
+                        ty: x86_dest_ty.clone(),
+                        src: TypedRegister::new(x86_dest_ty.clone(), RAX).into(),
+                        dest: replace_register(dest.1.clone()).into(),
+                    });
+
+                    new_instrs.push(NoOp);
+                },
+
+                LLVM::Instr::Store { dest, src } => {
+                    let x86_src_ty: Type = src.0.clone().into();
+
+                    new_instrs.push(Move {
+                        ty: DEFAULT_TYPE.clone(),
+                        src: replace_register(dest.1.clone()).into(),
+                        dest: TypedRegister::default(RAX).into(),
+                    });
+
+                    let val_src = cast_value_to_value_with_reg(&x86_src_ty, &src.1, RCX, &mut new_instrs);
+
+                    new_instrs.push(Move {
+                        ty: x86_src_ty.clone(),
+                        src: val_src,
+                        dest: X86::Memory {
+                            base: TypedRegister::default(RAX).into(),
+                            offset_base: None,
+                            offset_mul: None,
+                        }.into(),
+                    });
+
+                    new_instrs.push(NoOp);
+                },
+
                 LLVM::Instr::Branch(b) => {
                     let prepare_jump = |from, to, instrs: &mut Vec<X86::Instr>| {
                         if let Some(m) = self.phis_info.get(to) {
                             if let Some(v) = m.get(from) {
                                 for (dest, src) in v {
-                                    let src_val = cast_value_to_value_with_rax(&src, instrs);
+                                    let src_val = cast_value_to_value_with_reg(&DEFAULT_TYPE, &src, RAX, instrs);
                                     instrs.push(Move {
                                         ty: DEFAULT_TYPE.clone(),
                                         dest: replace_register(dest.clone()).into(),
@@ -323,8 +419,8 @@ impl X86Compiler {
                             let dest = self.labels_map.get(label).unwrap_or_else(|| panic!("1")).clone();
                             new_instrs.push(Jump(X86::Jump::Direct { dest }));
                         },
-                        LLVM::Branch::Conditional { val, true_label, false_label, .. } => {
-                            let rhs = cast_value_to_value_with_rax(val, &mut new_instrs);
+                        LLVM::Branch::Conditional { val, true_label, false_label, ty } => {
+                            let rhs = cast_value_to_value_with_reg(&ty.clone().into(), val, RAX, &mut new_instrs);
                             new_instrs.push(Compare {
                                 ty: Type::Byte,
                                 lhs: 1.into(),
@@ -346,17 +442,18 @@ impl X86Compiler {
                     }
                 }
 
-                LLVM::Instr::Compare { dest_reg, op, val_lhs, val_rhs, .. } => {
+                LLVM::Instr::Compare { dest_reg, op, val_lhs, val_rhs, ty } => {
+                    let x86_ty = ty.clone().into();
                     let lhs = cast_value_to_value(val_rhs);
-                    let rhs = cast_value_to_value_with_rax(val_lhs, &mut new_instrs);
+                    let rhs = cast_value_to_value_with_reg(&x86_ty, val_lhs, RAX, &mut new_instrs);
 
                     new_instrs.push(Compare {
-                        ty: DEFAULT_TYPE.clone(),
+                        ty: x86_ty.clone(),
                         lhs,
                         rhs,
                     });
                     new_instrs.push(Move {
-                        ty: DEFAULT_TYPE.clone(),
+                        ty: x86_ty.clone(),
                         src: 0.into(),
                         dest: replace_register(dest_reg.clone()).into(),
                     });
@@ -366,22 +463,23 @@ impl X86Compiler {
                     });
                 },
 
-                LLVM::Instr::Call { dest_reg, name, args, .. } => {
+                LLVM::Instr::Call { dest_reg, name, args, ret_ty } => {
                     for i in (0..args.len()).rev() {
-                        let a = args[i].clone();
-                        let src_val = cast_value_to_value(&a.1);
+                        let (arg_ty, arg_val) = args[i].clone();
+                        let x86_arg_ty = arg_ty.clone().into();
+                        let src_val = cast_value_to_value(&arg_val);
                         if i < 6 {
                             let dest_val = match i {
-                                0 => Register::RDI.into(),
-                                1 => Register::RSI.into(),
-                                2 => Register::RDX.into(),
-                                3 => Register::RCX.into(),
-                                4 => Register::R8.into(),
-                                5 => Register::R9.into(),
+                                0 => TypedRegister::new(x86_arg_ty, RDI).into(),
+                                1 => TypedRegister::new(x86_arg_ty, RSI).into(),
+                                2 => TypedRegister::new(x86_arg_ty, RDX).into(),
+                                3 => TypedRegister::new(x86_arg_ty, RCX).into(),
+                                4 => TypedRegister::new(x86_arg_ty, R8).into(),
+                                5 => TypedRegister::new(x86_arg_ty, R9).into(),
                                 _ => { panic!("should not happen") },
                             };
                             new_instrs.push(Move {
-                                ty: DEFAULT_TYPE.clone(),
+                                ty: arg_ty.into(),
                                 src: src_val,
                                 dest: dest_val,
                             });
@@ -390,7 +488,7 @@ impl X86Compiler {
                                 0..=5 => {},
                                 _ => {
                                     new_instrs.push(Push {
-                                        ty: DEFAULT_TYPE.clone(),
+                                        ty: arg_ty.into(),
                                         src: src_val,
                                     });
                                 },
@@ -400,8 +498,8 @@ impl X86Compiler {
                     new_instrs.push(Call { name: name.clone() });
                     if let Some(reg) = dest_reg {
                         new_instrs.push(Move {
-                            ty: DEFAULT_TYPE.clone(),
-                            src: Register::RAX.into(),
+                            ty: ret_ty.clone().into(),
+                            src: TypedRegister::new(ret_ty.clone().into(), RAX).into(),
                             dest: replace_register(reg.clone()).into(),
                         });
                     }
@@ -410,7 +508,7 @@ impl X86Compiler {
                             ty: DEFAULT_TYPE.clone(),
                             op: ArithmOp::Add.into(),
                             src: ((args.len() as i32 - 6) * DEFAULT_WORD_SIZE).into(),
-                            dest: Register::RSP.into(),
+                            dest: TypedRegister::default(RSP).into(),
                         });
                     }
                 },
@@ -419,92 +517,150 @@ impl X86Compiler {
                     // handled during the jumps
                 },
 
-                LLVM::Instr::GetElementPtr { dest, src, .. } => {
+                LLVM::Instr::GetElementPtr { dest, src, args } => {
                     match src.1.clone() {
                         LLVM::Value::Static(s) => {
                             let static_ = self.statics_map.get(&s).unwrap().clone();
                             new_instrs.push(Lea {
                                 ty: DEFAULT_TYPE.clone(),
                                 src: static_.into(),
-                                dest: Register::RAX.into(),
+                                dest: TypedRegister::default(RAX).into(),
                             });
                             new_instrs.push(Move {
                                 ty: DEFAULT_TYPE.clone(),
-                                src: Register::RAX.into(),
+                                src: TypedRegister::default(RAX).into(),
                                 dest: replace_register(dest.1.clone()).into(),
                             });
                         },
-                        _ => { panic!("should not happend!") },
+                        LLVM::Value::Register(reg) => {
+                            assert!(args.len() == 1);
+                            let (idx_ty, idx_val) = args[0].clone();
+
+                            let rax_reg = TypedRegister::new(src.0.clone().into(), RAX);
+                            new_instrs.push(Move {
+                                ty: src.0.clone().into(), // always ptr type
+                                src: replace_register(reg.clone()).into(),
+                                dest: rax_reg.clone().into(),
+                            });
+
+                            new_instrs.push(Xor {
+                                ty: DEFAULT_TYPE.clone(),
+                                lhs: TypedRegister::default(RCX).into(),
+                                rhs: TypedRegister::default(RCX).into(),
+                            });
+
+                            if let LLVM::Value::Const(c) = idx_val {
+                                new_instrs.push(Move {
+                                    ty: idx_ty.clone().into(),
+                                    src: c.into(),
+                                    dest: TypedRegister::new(idx_ty.clone().into(), RCX).into(),
+                                });
+                            } else if let LLVM::Value::Register(r) = idx_val {
+                                new_instrs.push(Move {
+                                    ty: idx_ty.clone().into(),
+                                    src: replace_register(r.clone()).into(),
+                                    dest: TypedRegister::new(idx_ty.clone().into(), RCX).into(),
+                                });
+                            } else {
+                                panic!("should not happen")
+                            }
+
+                            new_instrs.push(Lea {
+                                ty: DEFAULT_TYPE.clone(),
+                                src: X86::Storage::Memory(X86::Memory {
+                                    base: rax_reg.clone().into(),
+                                    offset_base: Some(
+                                        Offset::Register(TypedRegister::default(RCX))
+                                    ),
+                                    offset_mul: Some(Offset::Const(dest.0.byte_size())),
+                                }).into(),
+                                dest: TypedRegister::default(RAX).into(),
+                            });
+
+                            new_instrs.push(Move {
+                                ty: src.0.clone().into(),
+                                src: TypedRegister::new(src.0.clone().into(), RAX).into(),
+                                dest: replace_register(dest.1.clone()).into(),
+                            });
+                        },
+                        _ => { panic!("should not happen") }
                     }
                 },
 
                 LLVM::Instr::Arithm { dest, op, val_lhs, val_rhs } => {
                     use llvm::operators as LLVMOperator;
+                    let x86_dest_ty: Type = dest.0.clone().into();
 
                     match op {
                         LLVMOperator::Operator::Arithm(LLVMOperator::ArithmOp::Div) |
                         LLVMOperator::Operator::Arithm(LLVMOperator::ArithmOp::Mod) => {
+                            let rax_reg = TypedRegister::new(x86_dest_ty.clone(), RAX);
+                            let rcx_reg = TypedRegister::new(x86_dest_ty.clone(), RCX);
+
                             new_instrs.push(Xor {
                                 ty: DEFAULT_TYPE.clone(),
-                                lhs: Register::RDX.into(),
-                                rhs: Register::RDX.into(),
+                                lhs: TypedRegister::default(RDX).into(),
+                                rhs: TypedRegister::default(RDX).into(),
                             });
                             new_instrs.push(Move {
-                                ty: DEFAULT_TYPE.clone(),
+                                ty: x86_dest_ty.clone(),
                                 src: cast_value_to_value(val_lhs),
-                                dest: Register::RAX.into(),
+                                dest: rax_reg.clone().into(),
                             });
                             new_instrs.push(Move {
-                                ty: DEFAULT_TYPE.clone(),
+                                ty: x86_dest_ty.clone(),
                                 src: cast_value_to_value(val_rhs),
-                                dest: Register::RCX.into(),
+                                dest: rcx_reg.clone().into(),
                             });
+
+                            new_instrs.push(Cdq);
                             new_instrs.push(Arithm {
-                                ty: DEFAULT_TYPE.clone(),
+                                ty: x86_dest_ty.clone(),
                                 op: ArithmOp::Div.into(),
-                                src: Register::RCX.into(),
-                                dest: X86::Memory { offset: 0 }.into(), //dummy
+                                src: rcx_reg.clone().into(),
+                                dest: X86::Storage::new_stack_memory(0).into(), //dummy
                             });
 
                             if let LLVMOperator::Operator::Arithm(LLVMOperator::ArithmOp::Div) = op {
                                 new_instrs.push(Move {
-                                    ty: DEFAULT_TYPE.clone(),
-                                    src: Register::RAX.into(),
+                                    ty: x86_dest_ty.clone(),
+                                    src: rax_reg.clone().into(),
                                     dest: replace_register(dest.1.clone()).into(),
                                 });
                             } else {
                                 new_instrs.push(Move {
-                                    ty: DEFAULT_TYPE.clone(),
-                                    src: Register::RDX.into(),
+                                    ty: x86_dest_ty.clone(),
+                                    src: TypedRegister::new(x86_dest_ty.clone(), RDX).into(),
                                     dest: replace_register(dest.1.clone()).into(),
                                 });
                             }
                         },
                         _ => {
-                            cast_value_to_value_with_rax(val_lhs, &mut new_instrs); // lhs in rax
+                            cast_value_to_value_with_reg(&x86_dest_ty, val_lhs, RAX, &mut new_instrs); // lhs in rax
+                            let rax_reg = TypedRegister::new(x86_dest_ty.clone(), RAX);
                             new_instrs.push(Arithm {
-                                ty: DEFAULT_TYPE.clone(),
+                                ty: x86_dest_ty.clone(),
                                 op: op.clone().into(),
                                 src: cast_value_to_value(&val_rhs),
-                                dest: Register::RAX.into(),
+                                dest: rax_reg.clone().into(),
                             });
 
                             new_instrs.push(Move {
-                                ty: DEFAULT_TYPE.clone(),
-                                src: Register::RAX.into(),
+                                ty: x86_dest_ty.clone(),
+                                src: rax_reg.clone().into(),
                                 dest: replace_register(dest.1.clone()).into(),
                             });
                         },
                     }
                 },
 
-                LLVM::Instr::Return { val, .. } => {
+                LLVM::Instr::Return { val, ty } => {
                     let src_val = cast_value_to_value(val);
 
                     new_instrs.push(Move {
-                        ty: DEFAULT_TYPE.clone(),
+                        ty: ty.clone().into(),
                         src: src_val,
-                        dest: Register::RAX.into(),
+                        dest: TypedRegister::new(ty.clone().into(), RAX).into(),
                     });
                     new_instrs.push(Jump(X86::Jump::Direct { dest: self.fin_label.clone() }));
                 },
@@ -512,8 +668,8 @@ impl X86Compiler {
                 LLVM::Instr::ReturnVoid => {
                     new_instrs.push(Xor {
                         ty: DEFAULT_TYPE.clone(),
-                        lhs: Register::RAX.into(),
-                        rhs: Register::RAX.into(),
+                        lhs: TypedRegister::default(RAX).into(),
+                        rhs: TypedRegister::default(RAX).into(),
                     });
                     new_instrs.push(Jump(X86::Jump::Direct { dest: self.fin_label.clone() }));
                 },

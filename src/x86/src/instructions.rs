@@ -4,13 +4,31 @@ use crate::operators::{Operator, ArithmOp};
 use llvm::utils::{unescape_string};
 use llvm::instructions as LLVM;
 
-#[derive(Debug, PartialEq, Clone)]
+pub static DEFAULT_WORD_SIZE: i32 = 8;
+pub static DEFAULT_TYPE: Type = Type::Quad;
+
+pub static DEFAULT_ARGS_OFFSET: i32 = 16;
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum Type {
     Byte,
     Word,
     Double,
     Quad,
 }
+
+impl From<LLVM::Type> for Type {
+    fn from(ty: LLVM::Type) -> Self {
+        match ty.byte_size() {
+            1 => Type::Byte,
+            2 => Type::Word,
+            4 => Type::Double,
+            8 => Type::Quad,
+            _ => { panic!("should not happen") },
+        }
+    }
+}
+
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -20,6 +38,105 @@ impl fmt::Display for Type {
             Word => write!(f, "w"),
             Double => write!(f, "l"),
             Quad => write!(f, "q"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct TypedRegister {
+    pub ty: Type,
+    pub reg: Register,
+}
+
+impl TypedRegister {
+    pub fn new(ty: Type, reg: Register) -> Self {
+        TypedRegister { ty, reg }
+    }
+
+    pub fn default(reg: Register) -> Self {
+        TypedRegister::new(DEFAULT_TYPE.clone(), reg)
+    }
+}
+
+impl fmt::Display for TypedRegister {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Register::*;
+        match self.ty {
+            Type::Byte => match self.reg {
+                RAX => write!(f, "%al"),
+                RBX => write!(f, "%bl"),
+                RCX => write!(f, "%cl"),
+                RDX => write!(f, "%dl"),
+                RBP => write!(f, "%bpl"),
+                RSP => write!(f, "%spl"),
+                RSI => write!(f, "%sil"),
+                RDI => write!(f, "%dil"),
+                R8  => write!(f, "%r8b"),
+                R9  => write!(f, "%r9b"),
+                R10 => write!(f, "%r10b"),
+                R11 => write!(f, "%r11b"),
+                R12 => write!(f, "%r12b"),
+                R13 => write!(f, "%r13b"),
+                R14 => write!(f, "%r14b"),
+                R15 => write!(f, "%r15b"),
+            },
+
+            Type::Word => match self.reg {
+                RAX => write!(f, "%ax"),
+                RBX => write!(f, "%bx"),
+                RCX => write!(f, "%cx"),
+                RDX => write!(f, "%dx"),
+                RBP => write!(f, "%bp"),
+                RSP => write!(f, "%sp"),
+                RSI => write!(f, "%si"),
+                RDI => write!(f, "%di"),
+                R8  => write!(f, "%r8w"),
+                R9  => write!(f, "%r9w"),
+                R10 => write!(f, "%r10w"),
+                R11 => write!(f, "%r11w"),
+                R12 => write!(f, "%r12w"),
+                R13 => write!(f, "%r13w"),
+                R14 => write!(f, "%r14w"),
+                R15 => write!(f, "%r15w"),
+            },
+
+            Type::Double => match self.reg {
+                RAX => write!(f, "%eax"),
+                RBX => write!(f, "%ebx"),
+                RCX => write!(f, "%ecx"),
+                RDX => write!(f, "%edx"),
+                RBP => write!(f, "%ebp"),
+                RSP => write!(f, "%esp"),
+                RSI => write!(f, "%esi"),
+                RDI => write!(f, "%edi"),
+                R8  => write!(f, "%r8d"),
+                R9  => write!(f, "%r9d"),
+                R10 => write!(f, "%r10d"),
+                R11 => write!(f, "%r11d"),
+                R12 => write!(f, "%r12d"),
+                R13 => write!(f, "%r13d"),
+                R14 => write!(f, "%r14d"),
+                R15 => write!(f, "%r15d"),
+            },
+
+            Type::Quad => match self.reg {
+                RAX => write!(f, "%rax"),
+                RBX => write!(f, "%rbx"),
+                RCX => write!(f, "%rcx"),
+                RDX => write!(f, "%rdx"),
+                RBP => write!(f, "%rbp"),
+                RSP => write!(f, "%rsp"),
+                RSI => write!(f, "%rsi"),
+                RDI => write!(f, "%rdi"),
+                R8  => write!(f, "%r8"),
+                R9  => write!(f, "%r9"),
+                R10 => write!(f, "%r10"),
+                R11 => write!(f, "%r11"),
+                R12 => write!(f, "%r12"),
+                R13 => write!(f, "%r13"),
+                R14 => write!(f, "%r14"),
+                R15 => write!(f, "%r15"),
+            },
         }
     }
 }
@@ -69,24 +186,55 @@ impl fmt::Display for Register {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub struct Memory {
-    pub offset: i32,
+pub enum Storage {
+    Register(TypedRegister),
+    Memory(Memory),
 }
 
-impl fmt::Display for Memory {
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum Offset {
+    Register(TypedRegister),
+    Const(i32),
+}
+
+impl fmt::Display for Offset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({})", self.offset, Register::RBP)
+        match self {
+            Offset::Register(r) => write!(f, "{}", r),
+            Offset::Const(c) => write!(f, "{}", c),
+        }
     }
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum Storage {
-    Register(Register),
-    Memory(Memory),
+pub struct Memory {
+    pub base: TypedRegister,
+    pub offset_base: Option<Offset>,
+    pub offset_mul: Option<Offset>,
 }
 
-impl From<Register> for Storage {
-    fn from(r: Register) -> Self {
+impl From<TypedRegister> for Memory {
+    fn from(r: TypedRegister) -> Self {
+        Memory {
+            base: r,
+            offset_base: None,
+            offset_mul: None,
+        }
+    }
+}
+
+impl Storage {
+    pub fn new_stack_memory(offset: i32) -> Self {
+        Storage::Memory(Memory {
+            base: TypedRegister::default(Register::RBP),
+            offset_base: Some(Offset::Const(offset)),
+            offset_mul: None,
+        })
+    }
+}
+
+impl From<TypedRegister> for Storage {
+    fn from(r: TypedRegister) -> Self {
         Storage::Register(r)
     }
 }
@@ -97,11 +245,29 @@ impl From<Memory> for Storage {
     }
 }
 
+impl From<Value> for Storage {
+    fn from(v: Value) -> Self {
+        match v {
+            Value::Storage(s) => s,
+            _ => { panic!("should not happen") },
+        }
+    }
+}
+
 impl fmt::Display for Storage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Storage::Register(r) => write!(f, "{}", r),
-            Storage::Memory(m) => write!(f, "{}", m),
+            Storage::Memory(m) => match &m.offset_base {
+                Some(offset_base) => match &m.offset_mul {
+                    Some(offset_mul) => write!(f, "({}, {}, {})", m.base, offset_base, offset_mul),
+                    None => match offset_base {
+                        Offset::Const(c) => write!(f, "{}({})", c, m.base),
+                        Offset::Register(r) => write!(f, "({}, {},)", m.base, r),
+                    }
+                },
+                _ => write!(f, "({})", m.base),
+            },
         }
     }
 }
@@ -201,15 +367,21 @@ impl From<Static> for Value {
     }
 }
 
-impl From<Register> for Value {
-    fn from(r: Register) -> Self {
-        Value::Storage(r.into())
+impl From<TypedRegister> for Value {
+    fn from(r: TypedRegister) -> Self {
+        Value::Storage(Storage::Register(r))
     }
 }
 
 impl From<Storage> for Value {
     fn from(s: Storage) -> Self {
         Value::Storage(s)
+    }
+}
+
+impl From<Memory> for Value {
+    fn from(m: Memory) -> Self {
+        Storage::from(m).into()
     }
 }
 
@@ -222,10 +394,10 @@ impl From<i32> for Value {
 impl From<LLVM::Const> for Value {
     fn from(c: LLVM::Const) -> Self {
         match c {
-            LLVM::Const::Int(v) => Value::Const(v),
-            LLVM::Const::False => Value::Const(0),
-            LLVM::Const::True => Value::Const(1),
-            LLVM::Const::Null => Value::Const(0),
+            LLVM::Const::Int(v) => v.into(),
+            LLVM::Const::False => 0.into(),
+            LLVM::Const::True => 1.into(),
+            LLVM::Const::Null => 0.into(),
         }
     }
 }
@@ -237,107 +409,6 @@ impl fmt::Display for Value {
             Const(c) => write!(f, "${}", c),
             Storage(s) => write!(f, "{}", s),
             Static(s) => write!(f, "{}", s),
-        }
-    }
-}
-
-pub struct TypedValue {
-    ty: Type,
-    val: Value,
-}
-
-impl TypedValue {
-    pub fn new(ty: &Type, val: &Value) -> Self {
-        TypedValue {
-            ty: ty.clone(),
-            val: val.clone(),
-        }
-    }
-}
-
-impl fmt::Display for TypedValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Register::*;
-        if let Value::Storage(Storage::Register(r)) = self.val.clone() {
-            match self.ty {
-                Type::Byte => match r {
-                    RAX => write!(f, "%al"),
-                    RBX => write!(f, "%bl"),
-                    RCX => write!(f, "%cl"),
-                    RDX => write!(f, "%dl"),
-                    RBP => write!(f, "%bpl"),
-                    RSP => write!(f, "%spl"),
-                    RSI => write!(f, "%sil"),
-                    RDI => write!(f, "%dil"),
-                    R8  => write!(f, "%r8b"),
-                    R9  => write!(f, "%r9b"),
-                    R10 => write!(f, "%r10b"),
-                    R11 => write!(f, "%r11b"),
-                    R12 => write!(f, "%r12b"),
-                    R13 => write!(f, "%r13b"),
-                    R14 => write!(f, "%r14b"),
-                    R15 => write!(f, "%r15b"),
-                },
-
-                Type::Word => match r {
-                    RAX => write!(f, "%ax"),
-                    RBX => write!(f, "%bx"),
-                    RCX => write!(f, "%cx"),
-                    RDX => write!(f, "%dx"),
-                    RBP => write!(f, "%bp"),
-                    RSP => write!(f, "%sp"),
-                    RSI => write!(f, "%si"),
-                    RDI => write!(f, "%di"),
-                    R8  => write!(f, "%r8w"),
-                    R9  => write!(f, "%r9w"),
-                    R10 => write!(f, "%r10w"),
-                    R11 => write!(f, "%r11w"),
-                    R12 => write!(f, "%r12w"),
-                    R13 => write!(f, "%r13w"),
-                    R14 => write!(f, "%r14w"),
-                    R15 => write!(f, "%r15w"),
-                },
-
-                Type::Double => match r {
-                    RAX => write!(f, "%eax"),
-                    RBX => write!(f, "%ebx"),
-                    RCX => write!(f, "%ecx"),
-                    RDX => write!(f, "%edx"),
-                    RBP => write!(f, "%ebp"),
-                    RSP => write!(f, "%esp"),
-                    RSI => write!(f, "%esi"),
-                    RDI => write!(f, "%edi"),
-                    R8  => write!(f, "%r8d"),
-                    R9  => write!(f, "%r9d"),
-                    R10 => write!(f, "%r10d"),
-                    R11 => write!(f, "%r11d"),
-                    R12 => write!(f, "%r12d"),
-                    R13 => write!(f, "%r13d"),
-                    R14 => write!(f, "%r14d"),
-                    R15 => write!(f, "%r15d"),
-                },
-
-                Type::Quad => match r {
-                    RAX => write!(f, "%rax"),
-                    RBX => write!(f, "%rbx"),
-                    RCX => write!(f, "%rcx"),
-                    RDX => write!(f, "%rdx"),
-                    RBP => write!(f, "%rbp"),
-                    RSP => write!(f, "%rsp"),
-                    RSI => write!(f, "%rsi"),
-                    RDI => write!(f, "%rdi"),
-                    R8  => write!(f, "%r8"),
-                    R9  => write!(f, "%r9"),
-                    R10 => write!(f, "%r10"),
-                    R11 => write!(f, "%r11"),
-                    R12 => write!(f, "%r12"),
-                    R13 => write!(f, "%r13"),
-                    R14 => write!(f, "%r14"),
-                    R15 => write!(f, "%r15"),
-                },
-            }
-        } else {
-            write!(f, "{}", self.val)
         }
     }
 }
@@ -367,7 +438,7 @@ pub enum Instr {
     },
     Lea {
         src: Value,
-        dest: Storage,
+        dest: TypedRegister,
         ty: Type,
     },
     Pop {
@@ -398,6 +469,7 @@ pub enum Instr {
         ty: Type,
     },
     Return,
+    Cdq,
     NoOp,
 }
 
@@ -409,10 +481,7 @@ impl fmt::Display for Instr {
             Instr::Lea { ty, dest, src } => write!(f, "lea{} {}, {}", ty, src, dest),
             Instr::Pop { ty, dest } => write!(f, "pop{} {}", ty, dest),
             Instr::Push { ty, src } => write!(f, "push{} {}", ty, src),
-            Instr::Compare { ty, lhs, rhs } => write!(
-                f, "cmp{} {}, {}",
-                ty, TypedValue::new(ty, lhs), TypedValue::new(ty, rhs)
-            ),
+            Instr::Compare { ty, lhs, rhs } => write!(f, "cmp{} {}, {}", ty, lhs, rhs),
             Instr::Set { op, dest } => {
                 match op {
                     Operator::Rel(o) => write!(f, "set{} {}", o, dest),
@@ -433,6 +502,7 @@ impl fmt::Display for Instr {
                 }
             }
             Instr::Return => write!(f, "ret"),
+            Instr::Cdq => write!(f, "cdq"),
             Instr::NoOp => write!(f, "nop"),
         }
     }

@@ -76,7 +76,7 @@ impl fmt::Display for ArithmOp {
             Add => write!(f, "add"),
             Sub => write!(f, "sub"),
             Mul => write!(f, "imul"),
-            Div => write!(f, "div"),
+            Div => write!(f, "idiv"),
         }
     }
 }

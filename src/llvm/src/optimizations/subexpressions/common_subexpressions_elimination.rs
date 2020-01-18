@@ -113,7 +113,6 @@ impl Optimizer {
 
             match self.expressions.get(&instr_str) {
                 Some(new_reg) => {
-                    // println!("found! {:?} {:?}", reg.clone(), new_reg.clone());
                     self.new_values.insert(reg.clone(), new_reg.clone());
                 },
                 None => {

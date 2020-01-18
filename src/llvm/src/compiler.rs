@@ -5,6 +5,7 @@ use base::ast;
 use base::types::{Labeler};
 use base::symbol_table::{SymbolTable};
 use crate::utils::{length_after_escape, instructions_to_blocks};
+use std::cmp::{max};
 
 use std::panic;
 
@@ -843,12 +844,17 @@ impl LLVMCompiler {
                 let entry_ty = arr_ty.deref_ptr().unwrap();
                 let (_, len_val) = self.compile_expression(&len_expr);
 
+                let len_fields = max(
+                    1,
+                    LLVM::ARRAY_LENGTH_TYPE.byte_size() / arr_ty.byte_size()
+                );
+
                 let total_len_i32 = self.next_register();
                 self.add_instr(LLVM::Instr::Arithm {
                     dest: (LLVM::Type::Int32, total_len_i32.clone()),
                     op: ArithmOp::Add.into(),
                     val_lhs: len_val.clone().into(),
-                    val_rhs: LLVM::Const::from(LLVM::ARRAY_LENGTH_TYPE.byte_size()).into(),
+                    val_rhs: LLVM::Const::from(len_fields).into(),
                 });
 
                 // calloc requires i64 arguments
@@ -889,7 +895,6 @@ impl LLVMCompiler {
                     dest: (arr_ty.clone(), arr_ptr.clone()),
                     src: (LLVM::Type::new_ptr(LLVM::Type::Int8), arr_ptr_i8.clone().into()),
                 });
-
 
                 (arr_ty.clone(), arr_ptr.into())
             },

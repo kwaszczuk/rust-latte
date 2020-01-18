@@ -1,17 +1,25 @@
 use std::collections::{HashMap};
+use std::collections::hash_map::Entry;
 
+use crate::mem2reg::dominance::{DominatorTree};
 use crate::instructions as LLVM;
 use crate::optimizations::base;
 use crate::utils::{blocks_to_instructions, instructions_to_blocks};
 
 pub struct Optimizer {
-    values: HashMap<String, LLVM::Const>
+    expressions: HashMap<String, LLVM::Register>,
+    new_values: HashMap<LLVM::Register, LLVM::Register>,
+    blocks_map: HashMap<LLVM::Label, LLVM::Block>,
+    dom_tree: DominatorTree
 }
 
 impl Optimizer {
     pub fn new() -> Self {
         Optimizer {
-            values: HashMap::new(),
+            expressions: HashMap::new(),
+            new_values: HashMap::new(),
+            blocks_map: HashMap::new(),
+            dom_tree: DominatorTree { edges: HashMap::new() }
         }
     }
 
@@ -30,9 +38,17 @@ impl Optimizer {
     }
 
     pub fn optimize_function(&mut self, fun: &LLVM::Function) -> LLVM::Function {
-        self.values.clear();
+        self.expressions.clear();
+        self.new_values.clear();
+        self.blocks_map = fun.body.iter()
+            .map(|b| (b.label.clone(), b.clone()))
+            .collect();
+        self.dom_tree = DominatorTree::from(&fun.body);
+
+        let entry_block = self.blocks_map.get(&self.dom_tree.get_root().unwrap()).unwrap().clone();
+        self.analyse_block(&entry_block);
+
         let instrs = blocks_to_instructions(&fun.body);
-        self.find_constant_variables(&instrs);
         let new_instrs = self.optimize_instructions(&instrs);
         let new_body = instructions_to_blocks(&new_instrs);
 
@@ -44,8 +60,83 @@ impl Optimizer {
         }
     }
 
+    fn analyse_block(&mut self, block: &LLVM::Block) {
+        use LLVM::Instr::*;
+
+        let mut added = vec![];
+        let mut reg;
+        let mut instr_str = String::from("");
+        for i in &block.instrs {
+            match i {
+                Branch(_) |
+                Label { .. } |
+                Call { .. } |
+                Return { .. } |
+                ReturnVoid |
+                Unreachable => {
+                    continue;
+                },
+
+                Compare { dest_reg, .. } => {
+                    reg = dest_reg.clone();
+                    instr_str = format!("{}", i)
+                        .split("=")
+                        .collect::<Vec<&str>>()[1]
+                        .trim()
+                        .to_string();
+                },
+
+                Store { dest, src } => {
+                    reg = dest.1.clone();
+                    let new_i = Store {
+                        src: src.clone(),
+                        dest: (dest.0.clone(), LLVM::Register::new("".to_string(), 0)),
+                    };
+                    instr_str = format!("{}", new_i).trim().to_string();
+                },
+
+                Load { dest, .. } |
+                Alloc { dest } |
+                Arithm { dest, .. } |
+                Sext { dest, .. } |
+                Phi { dest, .. } |
+                Bitcast { dest, .. } |
+                GetElementPtr { dest, .. } => {
+                    reg = dest.1.clone();
+                    instr_str = format!("{}", i)
+                        .split("=")
+                        .collect::<Vec<&str>>()[1]
+                        .trim()
+                        .to_string();
+                }
+            }
+
+            match self.expressions.get(&instr_str) {
+                Some(new_reg) => {
+                    // println!("found! {:?} {:?}", reg.clone(), new_reg.clone());
+                    self.new_values.insert(reg.clone(), new_reg.clone());
+                },
+                None => {
+                    self.expressions.insert(instr_str.clone(), reg.clone());
+                    added.push(instr_str.clone());
+                },
+            }
+        }
+
+        for lab in self.dom_tree.edges.get(&block.label).unwrap().clone() {
+            let child_block = self.blocks_map.get(&lab).unwrap().clone();
+            self.analyse_block(&child_block);
+        }
+
+        for v in &added {
+            self.expressions.remove(v);
+        }
+    }
+
+
     fn optimize_instructions(&mut self, instrs: &Vec<LLVM::Instr>) -> Vec<LLVM::Instr> {
         use LLVM::Instr::*;
+
         let mut new_instrs = vec![];
         for i in instrs {
             let new_instr: LLVM::Instr;
@@ -53,24 +144,38 @@ impl Optimizer {
                 Alloc { .. } |
                 ReturnVoid |
                 Unreachable |
-                Load { .. } |
                 Branch(LLVM::Branch::Direct { .. }) |
                 Label { .. } |
-                Sext { .. } |
-                Bitcast { .. } => {
+                Sext { .. } => {
                     new_instr = i.clone();
                 },
 
-                Store { src, dest } => {
-                    if let LLVM::Type::Ptr(_) = src.0 {
-                        new_instr = i.clone();
-                    } else {
-                        let new_val = self.optimize_value(&src.1);
-                        new_instr = Store {
-                            src: (src.0, new_val),
+                Load { src, dest } => {
+                    let new_val = self.optimize_value(&src.1.clone().into());
+                    if let LLVM::Value::Register(new_src) = new_val {
+                        new_instr = Load {
+                            src: (src.0, new_src),
                             dest,
                         };
+                    } else {
+                        new_instr = i.clone();
                     }
+                },
+
+                Bitcast { src, dest } => {
+                    let new_val = self.optimize_value(&src.1);
+                    new_instr = Bitcast {
+                        src: (src.0, new_val),
+                        dest,
+                    };
+                },
+
+                Store { src, dest } => {
+                    let new_val = self.optimize_value(&src.1);
+                    new_instr = Store {
+                        src: (src.0, new_val),
+                        dest,
+                    };
                 },
 
                 Compare { dest_reg, op, ty, val_lhs, val_rhs } => {
@@ -87,12 +192,7 @@ impl Optimizer {
 
                 Call { dest_reg, ret_ty, name, args } => {
                     let new_args = args.iter().cloned().map(|(ty, val)| {
-                        let new_val;
-                        if let LLVM::Type::Ptr(_) = ty {
-                            new_val = val.clone();
-                        } else {
-                            new_val = self.optimize_value(&val);
-                        }
+                        let new_val = self.optimize_value(&val);
                         (ty, new_val)
                     }).collect();
                     new_instr = Call {
@@ -137,9 +237,10 @@ impl Optimizer {
                 },
 
                 GetElementPtr { dest, src, args } => {
+                    let new_val = self.optimize_value(&src.1);
                     new_instr = GetElementPtr {
                         dest,
-                        src,
+                        src: (src.0, new_val),
                         args: args.iter()
                             .map(|idx| (idx.0.clone(), self.optimize_value(&idx.1)))
                             .collect(),
@@ -161,66 +262,17 @@ impl Optimizer {
     }
 
     fn optimize_value(&mut self, value: &LLVM::Value) -> LLVM::Value {
-        if let LLVM::Value::Register(LLVM::Register { name, .. }) = value.clone() {
-            if let Some(new_val) = self.values.get(&name) {
-                return new_val.clone().into();
+        if let LLVM::Value::Register(r) = value.clone() {
+            if let Some(new_reg) = self.new_values.get(&r) {
+                return new_reg.clone().into();
             }
         }
         value.clone()
-    }
-
-    fn find_constant_variables(&mut self, instrs: &Vec<LLVM::Instr>) {
-        use LLVM::Instr::*;
-        // assume all variables are constants so,
-        // add a value from each `store` instruction
-        for i in instrs {
-            match i {
-                Store { src, dest } => {
-                    if let LLVM::Value::Const(c) = src.1.clone() {
-                        self.values.insert(dest.1.name.clone(), c);
-                    }
-                },
-                _ => {},
-            }
-        }
-
-        // if a `store` value is not a constant, variable is not const
-        // also if it is different than a value saved, it means distinct
-        // values are assigned to the variable during exeuction of a program
-        for i in instrs {
-            match i {
-                Store { src, dest } => {
-                    if let Some(val) = self.values.get(&dest.1.name) {
-                        if let LLVM::Value::Const(c) = src.1.clone() {
-                            if *val != c {
-                                self.values.remove(&dest.1.name);
-                            }
-                        } else {
-                            self.values.remove(&dest.1.name);
-                        }
-                    }
-                },
-                _ => {},
-            }
-        }
-
-        // process load operations and save their registers as constant
-        // if they are loading constant variable
-        for i in instrs {
-            match i {
-                Load { src, dest } => {
-                    if let Some(val) = self.values.get(&src.1.name) {
-                        self.values.insert(dest.1.name.clone(), val.clone());
-                    }
-                },
-                _ => {},
-            }
-        }
     }
 }
 
 impl base::Optimizer for Optimizer {
     fn run(&mut self, prog: &LLVM::Program) -> LLVM::Program {
-        self.optimize_program(prog)
+        self.optimize_program(&prog)
     }
 }

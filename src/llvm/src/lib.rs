@@ -11,6 +11,7 @@ mod optimizations {
     pub mod constants;
     pub mod dead_code;
     pub mod phis;
+    pub mod subexpressions;
     pub mod branches;
     pub mod globals;
 }
@@ -20,6 +21,7 @@ use optimizations::constants::{ConstantsOptimizer};
 use optimizations::dead_code::{DeadCodeOptimizer};
 use optimizations::branches::{BranchesOptimizer};
 use optimizations::phis::{PhisOptimizer};
+use optimizations::subexpressions::{SubexpressionsOptimizer};
 use optimizations::globals;
 
 pub fn compile(ast_tree: &ast::Program) -> instructions::Program {
@@ -65,6 +67,12 @@ fn optimize(prog: &mut instructions::Program, opt_level: usize) -> instructions:
     #[cfg(any(feature="all-optimizations", feature="optimizations-phis"))] {
         prog.options.insert("optimizations-phis".to_string(), true);
         optimizations.push(Box::new(PhisOptimizer::new()));
+    }
+
+    prog.options.insert("optimizations-subexpressions".to_string(), false);
+    #[cfg(not(feature="no-mem2reg"))] {
+        prog.options.insert("optimizations-subexpressions".to_string(), true);
+        optimizations.push(Box::new(SubexpressionsOptimizer::new()));
     }
 
     let (prog, _) = apply_optimizers(prog, &mut optimizations, globals::MAX_OPTIMIZATION_ITERATIONS);

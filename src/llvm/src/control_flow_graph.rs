@@ -28,6 +28,12 @@ impl From<&Vec<LLVM::Block>> for ControlFlowGraph {
     }
 }
 
+impl From<&LLVM::Function> for ControlFlowGraph {
+    fn from(fun: &LLVM::Function) -> Self {
+        ControlFlowGraph::from(&fun.body)
+    }
+}
+
 impl fmt::Display for ControlFlowGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = String::from("");

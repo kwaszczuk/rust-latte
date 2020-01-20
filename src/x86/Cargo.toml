@@ -11,3 +11,8 @@ llvm = { path = "../llvm" }
 [lib]
 name = "x86"
 path = "src/lib.rs"
+
+[features]
+no-registers-allocation = []
+
+default=[]

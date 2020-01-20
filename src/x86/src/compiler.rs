@@ -1,10 +1,12 @@
-use std::collections::{HashMap};
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use crate::instructions as X86;
 use llvm::instructions as LLVM;
 use crate::operators::{ArithmOp, RelOp};
 use base::types::{Labeler};
-use X86::{DEFAULT_TYPE, DEFAULT_WORD_SIZE, DEFAULT_ARGS_OFFSET};
+use X86::{DEFAULT_TYPE, DEFAULT_WORD_SIZE, DEFAULT_ARGS_OFFSET, CALLEE_SAVED_OFFSET};
+use crate::register_allocation::{allocate_registers};
+use std::cmp::{min};
 
 use std::panic;
 
@@ -13,6 +15,7 @@ pub struct X86Compiler {
     statics_map: HashMap<LLVM::Static, X86::Static>,
     registers_map: HashMap<LLVM::Register, X86::Value>,
     labels_map: HashMap<LLVM::Label, X86::Label>,
+    allocated_registers: HashSet<X86::Register>,
     function_counter: usize,
     fin_label: X86::Label,
     phis_info: HashMap<LLVM::Label, HashMap<LLVM::Label, Vec<(LLVM::Register, LLVM::Value)>>>,
@@ -25,6 +28,7 @@ impl X86Compiler {
             statics_map: HashMap::new(),
             labels_map: HashMap::new(),
             registers_map: HashMap::new(),
+            allocated_registers: HashSet::new(),
             function_counter: 0,
             fin_label: X86::Label::new("".to_string(), 0), // dummy
             phis_info: HashMap::new(),
@@ -71,63 +75,80 @@ impl X86Compiler {
         let init_block = X86::Block {
             label: X86::Label::new("".to_string(), 0),
             instrs: {
-                let mut ret = vec![
-                    Push {
-                        ty: DEFAULT_TYPE.clone(),
-                        src: TypedRegister::default(RBP).into()
-                    },
-                    Move {
-                        ty: DEFAULT_TYPE.clone(),
-                        src: TypedRegister::default(RSP).into(),
-                        dest: TypedRegister::default(RBP).into(),
-                    },
-                    Arithm {
-                        ty: DEFAULT_TYPE.clone(),
-                        op: ArithmOp::Sub.into(),
-                        src: align(var_cnt * DEFAULT_WORD_SIZE, 16).into(),
-                        dest: TypedRegister::default(RSP).into(),
-                    },
-                ];
-                for i in 0..fun.args.len() {
-                    if i < 6 {
-                        let src = match i {
-                            0 => TypedRegister::default(RDI).into(),
-                            1 => TypedRegister::default(RSI).into(),
-                            2 => TypedRegister::default(RDX).into(),
-                            3 => TypedRegister::default(RCX).into(),
-                            4 => TypedRegister::default(R8).into(),
-                            5 => TypedRegister::default(R9).into(),
-                            _ => { panic!("should not happen") },
-                        };
-                        ret.push(Move {
+                let mut instrs = vec![];
+                // save callee saved registers
+                for reg in X86::all_registers() {
+                    if reg != RSP && reg.is_callee_saved() {
+                        instrs.push(Push {
                             ty: DEFAULT_TYPE.clone(),
-                            src,
-                            dest: X86::Storage::new_stack_memory(
-                                -(i as i32 + 1) * DEFAULT_WORD_SIZE
-                            ).into(),
+                            src: TypedRegister::default(reg).into(),
                         });
                     }
                 }
-                ret
+                instrs.push(Move {
+                    ty: DEFAULT_TYPE.clone(),
+                    src: TypedRegister::default(RSP).into(),
+                    dest: TypedRegister::default(RBP).into(),
+                });
+                instrs.push(Arithm {
+                    ty: DEFAULT_TYPE.clone(),
+                    op: ArithmOp::Sub.into(),
+                    src: align(var_cnt * DEFAULT_WORD_SIZE, 16).into(),
+                    dest: TypedRegister::default(RSP).into(),
+                });
+
+                #[cfg(feature="no-registers-allocation")] {
+                    // move function arguments to the stack variables
+                    for i in 0..fun.args.len() {
+                        if i < 6 {
+                            let src_reg = match i {
+                                0 => RDI,
+                                1 => RSI,
+                                2 => RDX,
+                                3 => RCX,
+                                4 => R8,
+                                5 => R9,
+                                _ => { panic!("should not happen") },
+                            };
+                            instrs.push(Move {
+                                ty: DEFAULT_TYPE.clone(),
+                                src: TypedRegister::default(src_reg).into(),
+                                dest: X86::Storage::new_stack_memory(
+                                    -(i as i32 + 1) * DEFAULT_WORD_SIZE
+                                ).into(),
+                            });
+                        }
+                    }
+                }
+                instrs
             },
         };
 
         self.fin_label = self.label_generator.next();
         let fin_block = X86::Block {
             label: self.fin_label.clone(),
-            instrs: vec![
-                Arithm {
+            instrs: {
+                let mut instrs = vec![];
+                instrs.push(Arithm {
                     ty: DEFAULT_TYPE.clone(),
                     op: ArithmOp::Add.into(),
                     src: align(var_cnt * DEFAULT_WORD_SIZE, 16).into(),
                     dest: TypedRegister::default(RSP).into(),
-                },
-                Pop {
-                    ty: DEFAULT_TYPE.clone(),
-                    dest: TypedRegister::default(RBP).into(),
-                },
-                Return,
-            ],
+                });
+                // restore callee saved registers
+                for reg in X86::all_registers().iter().rev() {
+                    if reg != &RSP && reg.is_callee_saved() {
+                        instrs.push(Pop {
+                            ty: DEFAULT_TYPE.clone(),
+                            dest: TypedRegister::default(reg.clone()).into(),
+                        });
+
+                    }
+                }
+                instrs.push(Return {});
+
+                instrs
+            }
         };
 
 
@@ -145,39 +166,111 @@ impl X86Compiler {
     }
 
     fn prepare_variables(&mut self, fun: &LLVM::Function) -> i32 {
-        use LLVM::Instr::*;
-        self.registers_map = HashMap::new();
-
         let mut cnt = 0;
-        for i in 0..fun.args.len() {
-            let store: X86::Storage = match i {
-                0..=5 => {
+
+        #[cfg(not(feature="no-registers-allocation"))] {
+            use X86::*;
+
+
+            let allocation = allocate_registers(&fun);
+
+            self.allocated_registers = HashSet::new();
+            for (llvm_reg, x86_reg) in &allocation.results {
+                if let Some(reg) = x86_reg {
+                    // create a mappings for allocated registers
+                    self.registers_map.insert(
+                        llvm_reg.clone(),
+                        Storage::Register(TypedRegister::default(reg.clone())).into(),
+                    );
+                    self.allocated_registers.insert(reg.clone());
+                } else if llvm_reg.prefix != "" {
+                    // create mappings for unallocated non-argument registers
                     cnt += 1;
-                    X86::Storage::new_stack_memory(-cnt * DEFAULT_WORD_SIZE).into()
-                },
-                _ => X86::Storage::new_stack_memory(
-                    DEFAULT_ARGS_OFFSET + (i as i32 - 6) * DEFAULT_WORD_SIZE
-                ).into(),
-            };
-            self.registers_map.insert(
-                LLVM::Register::new("".to_string(), i),
-                store.into(),
-            );
+                    self.registers_map.insert(
+                        llvm_reg.clone(),
+                        Storage::new_stack_memory(-cnt * DEFAULT_WORD_SIZE).into()
+                    );
+                } else {
+                    // create mappings for unallocated argument registers
+                    let arg_idx = llvm_reg.counter.clone();
+                    self.registers_map.insert(
+                        llvm_reg.clone(),
+                        Storage::new_stack_memory(
+                            DEFAULT_ARGS_OFFSET + (arg_idx as i32 - 6 + CALLEE_SAVED_OFFSET) * DEFAULT_WORD_SIZE
+                        ).into()
+                    );
+                }
+            }
+        }
+
+        #[cfg(feature="no-registers-allocation")] {
+            use LLVM::Instr::*;
+            self.registers_map = HashMap::new();
+
+            for i in 0..fun.args.len() {
+                let store: X86::Storage = match i {
+                    0..=5 => {
+                        cnt += 1;
+                        X86::Storage::new_stack_memory(-cnt * DEFAULT_WORD_SIZE).into()
+                    },
+                    _ => X86::Storage::new_stack_memory(
+                        DEFAULT_ARGS_OFFSET + (i as i32 - 6 + CALLEE_SAVED_OFFSET) * DEFAULT_WORD_SIZE
+                    ).into(),
+                };
+                self.registers_map.insert(
+                    LLVM::Register::new("".to_string(), i),
+                    store.into(),
+                );
+            }
+
+            for b in &fun.body {
+                for i in &b.instrs {
+                    match i {
+                        Alloc { .. } |
+                        Return { .. } |
+                        ReturnVoid |
+                        Unreachable |
+                        Branch(_) |
+                        Store { .. } |
+                        Label { .. } |
+                        Bitcast { .. } |
+                        Sext { .. } => {},
+
+                        Compare { dest_reg, .. } => {
+                            cnt += 1;
+                            self.registers_map.insert(dest_reg.clone(), X86::Storage::new_stack_memory(
+                                -cnt * DEFAULT_WORD_SIZE
+                            ).into());
+                        },
+
+                        Call { dest_reg, .. } => {
+                            if let Some(reg) = dest_reg {
+                                cnt += 1;
+                                self.registers_map.insert(reg.clone(), X86::Storage::new_stack_memory(
+                                    -cnt * DEFAULT_WORD_SIZE
+                                ).into());
+                            }
+                        },
+
+                        Phi { dest, .. } |
+                        Load { dest, .. } |
+                        GetElementPtr { dest, .. } |
+                        Arithm { dest, .. } => {
+                            cnt += 1;
+                            self.registers_map.insert(dest.1.clone(), X86::Storage::new_stack_memory(
+                                -cnt * DEFAULT_WORD_SIZE
+                            ).into());
+                        },
+                    }
+                }
+            }
         }
 
         for b in &fun.body {
             for i in &b.instrs {
                 match i {
-                    Alloc { .. } |
-                    Return { .. } |
-                    ReturnVoid |
-                    Unreachable |
-                    Branch(_) |
-                    Store { .. } |
-                    Label { .. } => {},
-
-                    Bitcast { dest, src } |
-                    Sext { dest, src } => {
+                    LLVM::Instr::Bitcast { dest, src } |
+                    LLVM::Instr::Sext { dest, src } => {
                         match &src.1 {
                             LLVM::Value::Const(c) => {
                                 if let LLVM::Const::Int(ci) = c {
@@ -195,35 +288,11 @@ impl X86Compiler {
                             },
                         }
                     },
-
-                    Compare { dest_reg, .. } => {
-                        cnt += 1;
-                        self.registers_map.insert(dest_reg.clone(), X86::Storage::new_stack_memory(
-                            -cnt * DEFAULT_WORD_SIZE
-                        ).into());
-                    },
-
-                    Call { dest_reg, .. } => {
-                        if let Some(reg) = dest_reg {
-                            cnt += 1;
-                            self.registers_map.insert(reg.clone(), X86::Storage::new_stack_memory(
-                                -cnt * DEFAULT_WORD_SIZE
-                            ).into());
-                        }
-                    },
-
-                    Phi { dest, .. } |
-                    Load { dest, .. } |
-                    GetElementPtr { dest, .. } |
-                    Arithm { dest, .. } => {
-                        cnt += 1;
-                        self.registers_map.insert(dest.1.clone(), X86::Storage::new_stack_memory(
-                            -cnt * DEFAULT_WORD_SIZE
-                        ).into());
-                    },
+                    _ => {},
                 }
             }
         }
+
         cnt
     }
 
@@ -302,7 +371,7 @@ impl X86Compiler {
                 LLVM::Value::Register(r) => {
                     instrs.push(Move {
                         ty: ty.clone(),
-                        src: replace_register(r.clone()).into(),
+                        src: replace_register(r.clone()).with_type(ty).into(),
                         dest: final_reg.clone().into(),
                     });
                     final_reg.clone().into()
@@ -353,7 +422,7 @@ impl X86Compiler {
                     let x86_dest_ty: Type = dest.0.clone().into();
                     new_instrs.push(Move {
                         ty: DEFAULT_TYPE.clone(),
-                        src: replace_register(src.1.clone()),
+                        src: replace_register(src.1.clone()).with_type(&DEFAULT_TYPE),
                         dest: TypedRegister::default(RAX).into(),
                     });
 
@@ -366,10 +435,8 @@ impl X86Compiler {
                     new_instrs.push(Move {
                         ty: x86_dest_ty.clone(),
                         src: TypedRegister::new(x86_dest_ty.clone(), RAX).into(),
-                        dest: replace_register(dest.1.clone()).into(),
+                        dest: replace_register(dest.1.clone()).with_type(&x86_dest_ty).into(),
                     });
-
-                    new_instrs.push(NoOp);
                 },
 
                 LLVM::Instr::Store { dest, src } => {
@@ -377,7 +444,7 @@ impl X86Compiler {
 
                     new_instrs.push(Move {
                         ty: DEFAULT_TYPE.clone(),
-                        src: replace_register(dest.1.clone()).into(),
+                        src: replace_register(dest.1.clone()).with_type(&DEFAULT_TYPE).into(),
                         dest: TypedRegister::default(RAX).into(),
                     });
 
@@ -392,8 +459,6 @@ impl X86Compiler {
                             offset_mul: None,
                         }.into(),
                     });
-
-                    new_instrs.push(NoOp);
                 },
 
                 LLVM::Instr::Branch(b) => {
@@ -404,7 +469,7 @@ impl X86Compiler {
                                     let src_val = cast_value_to_value_with_reg(&DEFAULT_TYPE, &src, RAX, instrs);
                                     instrs.push(Move {
                                         ty: DEFAULT_TYPE.clone(),
-                                        dest: replace_register(dest.clone()).into(),
+                                        dest: replace_register(dest.clone()).with_type(&DEFAULT_TYPE).into(),
                                         src: src_val,
                                     });
                                 }
@@ -444,7 +509,7 @@ impl X86Compiler {
 
                 LLVM::Instr::Compare { dest_reg, op, val_lhs, val_rhs, ty } => {
                     let x86_ty = ty.clone().into();
-                    let lhs = cast_value_to_value(val_rhs);
+                    let lhs = cast_value_to_value(val_rhs).with_type(&x86_ty);
                     let rhs = cast_value_to_value_with_reg(&x86_ty, val_lhs, RAX, &mut new_instrs);
 
                     new_instrs.push(Compare {
@@ -455,60 +520,131 @@ impl X86Compiler {
                     new_instrs.push(Move {
                         ty: x86_ty.clone(),
                         src: 0.into(),
-                        dest: replace_register(dest_reg.clone()).into(),
+                        dest: replace_register(dest_reg.clone()).with_type(&x86_ty).into(),
                     });
                     new_instrs.push(Set {
                         op: op.clone().into(),
-                        dest: replace_register(dest_reg.clone()).into(),
+                        dest: replace_register(dest_reg.clone()).with_type(&Type::Byte).into(),
                     });
                 },
 
                 LLVM::Instr::Call { dest_reg, name, args, ret_ty } => {
-                    for i in (0..args.len()).rev() {
-                        let (arg_ty, arg_val) = args[i].clone();
-                        let x86_arg_ty = arg_ty.clone().into();
-                        let src_val = cast_value_to_value(&arg_val);
-                        if i < 6 {
-                            let dest_val = match i {
-                                0 => TypedRegister::new(x86_arg_ty, RDI).into(),
-                                1 => TypedRegister::new(x86_arg_ty, RSI).into(),
-                                2 => TypedRegister::new(x86_arg_ty, RDX).into(),
-                                3 => TypedRegister::new(x86_arg_ty, RCX).into(),
-                                4 => TypedRegister::new(x86_arg_ty, R8).into(),
-                                5 => TypedRegister::new(x86_arg_ty, R9).into(),
-                                _ => { panic!("should not happen") },
-                            };
-                            new_instrs.push(Move {
-                                ty: arg_ty.into(),
-                                src: src_val,
-                                dest: dest_val,
+                    let allocated_registers: Vec<X86::Register> =
+                        self.allocated_registers.iter().cloned().collect();
+
+                    // save caller-saved registers before function call
+                    for reg in &allocated_registers {
+                        if reg.is_caller_saved() {
+                            new_instrs.push(Push {
+                                ty: DEFAULT_TYPE.clone(),
+                                src: Storage::Register(TypedRegister::default(reg.clone())).into(),
                             });
-                        } else {
-                            match i {
-                                0..=5 => {},
-                                _ => {
-                                    new_instrs.push(Push {
-                                        ty: arg_ty.into(),
-                                        src: src_val,
-                                    });
-                                },
-                            }
                         }
                     }
-                    new_instrs.push(Call { name: name.clone() });
-                    if let Some(reg) = dest_reg {
-                        new_instrs.push(Move {
-                            ty: ret_ty.clone().into(),
-                            src: TypedRegister::new(ret_ty.clone().into(), RAX).into(),
-                            dest: replace_register(reg.clone()).into(),
+
+                    // first push non-register arguments to make sure that registers
+                    // that store their values are up to date
+                    for i in 6..args.len() {
+                        let (arg_ty, arg_val) = args[i].clone();
+                        let x86_arg_ty = X86::Type::from(arg_ty.clone());
+                        let src_val = cast_value_to_value(&arg_val).with_type(&x86_arg_ty);
+
+                        new_instrs.push(Push {
+                            ty: arg_ty.into(),
+                            src: src_val,
                         });
                     }
+
+                    // setup register arguments
+
+                    let mut moves = HashMap::new();
+                    for i in 0..min(6, args.len()) {
+                        let (arg_ty, arg_val) = args[i].clone();
+                        let x86_arg_ty = X86::Type::from(arg_ty.clone());
+                        let src_val = cast_value_to_value(&arg_val);
+                        let dest_reg = match i {
+                            0 => RDI,
+                            1 => RSI,
+                            2 => RDX,
+                            3 => RCX,
+                            4 => R8,
+                            5 => R9,
+                            _ => { panic!("should not happen") },
+                        };
+                        let dest_val = Storage::from(TypedRegister::default(dest_reg));
+                        moves.insert(dest_val, (x86_arg_ty, src_val));
+                    }
+
+                    while !moves.is_empty() {
+                        let mut next_move = None;
+                        let sources: HashSet<X86::Value> = moves.values()
+                            .map(|(ty, src)| src).cloned()
+                            .collect();
+
+                        for (dest, (ty, src)) in &moves {
+                            let dest_val = Value::from(dest.clone());
+                            // check if register is safe to set,
+                            // meaning no move uses it as a source
+                            if &dest_val == src || !sources.contains(&dest_val) {
+                                next_move = Some((ty.clone(), src.clone(), dest.clone()));
+                                break;
+                            }
+                        }
+
+                        // if no register can be set safely, offload one of
+                        // them to RAX, it will break a cycle and make chosen
+                        // register safe to set
+                        if let None = next_move {
+                            let dest = moves.keys().cloned().next().unwrap();
+                            let (ty, mut src) = moves.get(&dest).unwrap().clone();
+
+                            moves.remove(&dest);
+                            new_instrs.push(Move {
+                                ty: DEFAULT_TYPE.clone(),
+                                src: src.with_type(&DEFAULT_TYPE),
+                                dest: TypedRegister::default(RAX).into(),
+                            });
+                            moves.insert(dest, (ty, TypedRegister::default(RAX).into()));
+                        } else {
+                            let (ty, mut src, mut dest) = next_move.unwrap();
+                            new_instrs.push(Move {
+                                ty: ty.clone(),
+                                src: src.with_type(&ty),
+                                dest: dest.with_type(&ty),
+                            });
+                            moves.remove(&dest);
+                        }
+                    }
+
+                    // function call
+                    new_instrs.push(Call { name: name.clone() });
+
+                    // remove pushed arguments
                     if args.len() > 6 {
                         new_instrs.push(Arithm {
                             ty: DEFAULT_TYPE.clone(),
                             op: ArithmOp::Add.into(),
                             src: ((args.len() as i32 - 6) * DEFAULT_WORD_SIZE).into(),
                             dest: TypedRegister::default(RSP).into(),
+                        });
+                    }
+
+                    // restore caller-saved registers
+                    for reg in allocated_registers.iter().rev() {
+                        if reg.is_caller_saved() {
+                            new_instrs.push(Pop {
+                                ty: DEFAULT_TYPE.clone(),
+                                dest: Storage::Register(TypedRegister::default(reg.clone())).into(),
+                            });
+                        }
+                    }
+
+                    // save function return
+                    if let Some(reg) = dest_reg {
+                        new_instrs.push(Move {
+                            ty: ret_ty.clone().into(),
+                            src: TypedRegister::new(ret_ty.clone().into(), RAX).into(),
+                            dest: replace_register(reg.clone()).with_type(&ret_ty.clone().into()).into(),
                         });
                     }
                 },
@@ -529,7 +665,7 @@ impl X86Compiler {
                             new_instrs.push(Move {
                                 ty: DEFAULT_TYPE.clone(),
                                 src: TypedRegister::default(RAX).into(),
-                                dest: replace_register(dest.1.clone()).into(),
+                                dest: replace_register(dest.1.clone()).with_type(&DEFAULT_TYPE).into(),
                             });
                         },
                         LLVM::Value::Register(reg) => {
@@ -539,7 +675,7 @@ impl X86Compiler {
                             let rax_reg = TypedRegister::new(src.0.clone().into(), RAX);
                             new_instrs.push(Move {
                                 ty: src.0.clone().into(), // always ptr type
-                                src: replace_register(reg.clone()).into(),
+                                src: replace_register(reg.clone()).with_type(&src.0.clone().into()).into(),
                                 dest: rax_reg.clone().into(),
                             });
 
@@ -558,7 +694,7 @@ impl X86Compiler {
                             } else if let LLVM::Value::Register(r) = idx_val {
                                 new_instrs.push(Move {
                                     ty: idx_ty.clone().into(),
-                                    src: replace_register(r.clone()).into(),
+                                    src: replace_register(r.clone()).with_type(&idx_ty.clone().into()).into(),
                                     dest: TypedRegister::new(idx_ty.clone().into(), RCX).into(),
                                 });
                             } else {
@@ -580,7 +716,7 @@ impl X86Compiler {
                             new_instrs.push(Move {
                                 ty: src.0.clone().into(),
                                 src: TypedRegister::new(src.0.clone().into(), RAX).into(),
-                                dest: replace_register(dest.1.clone()).into(),
+                                dest: replace_register(dest.1.clone()).with_type(&src.0.clone().into()).into(),
                             });
                         },
                         _ => { panic!("should not happen") }
@@ -604,12 +740,12 @@ impl X86Compiler {
                             });
                             new_instrs.push(Move {
                                 ty: x86_dest_ty.clone(),
-                                src: cast_value_to_value(val_lhs),
+                                src: cast_value_to_value(val_lhs).with_type(&x86_dest_ty),
                                 dest: rax_reg.clone().into(),
                             });
                             new_instrs.push(Move {
                                 ty: x86_dest_ty.clone(),
-                                src: cast_value_to_value(val_rhs),
+                                src: cast_value_to_value(val_rhs).with_type(&x86_dest_ty),
                                 dest: rcx_reg.clone().into(),
                             });
 
@@ -625,13 +761,13 @@ impl X86Compiler {
                                 new_instrs.push(Move {
                                     ty: x86_dest_ty.clone(),
                                     src: rax_reg.clone().into(),
-                                    dest: replace_register(dest.1.clone()).into(),
+                                    dest: replace_register(dest.1.clone()).with_type(&x86_dest_ty.clone()).into(),
                                 });
                             } else {
                                 new_instrs.push(Move {
                                     ty: x86_dest_ty.clone(),
                                     src: TypedRegister::new(x86_dest_ty.clone(), RDX).into(),
-                                    dest: replace_register(dest.1.clone()).into(),
+                                    dest: replace_register(dest.1.clone()).with_type(&x86_dest_ty.clone()).into(),
                                 });
                             }
                         },
@@ -641,21 +777,21 @@ impl X86Compiler {
                             new_instrs.push(Arithm {
                                 ty: x86_dest_ty.clone(),
                                 op: op.clone().into(),
-                                src: cast_value_to_value(&val_rhs),
+                                src: cast_value_to_value(&val_rhs).with_type(&x86_dest_ty),
                                 dest: rax_reg.clone().into(),
                             });
 
                             new_instrs.push(Move {
                                 ty: x86_dest_ty.clone(),
                                 src: rax_reg.clone().into(),
-                                dest: replace_register(dest.1.clone()).into(),
+                                dest: replace_register(dest.1.clone()).with_type(&x86_dest_ty).into(),
                             });
                         },
                     }
                 },
 
                 LLVM::Instr::Return { val, ty } => {
-                    let src_val = cast_value_to_value(val);
+                    let src_val = cast_value_to_value(val).with_type(&ty.clone().into());
 
                     new_instrs.push(Move {
                         ty: ty.clone().into(),

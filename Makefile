@@ -22,6 +22,10 @@ ifeq ($(OPTIMIZE),0)
   	CFLAGS += --features "llvm/no-optimizations"
 endif
 
+ifeq ($(REGALLOC),0)
+  	CFLAGS += --features "x86/no-registers-allocation"
+endif
+
 .PHONY: llvm
 llvm: BINARY_NAME=latc_llvm
 llvm:

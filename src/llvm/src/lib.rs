@@ -4,7 +4,7 @@ pub mod instructions;
 pub mod operators;
 mod compiler;
 pub mod utils;
-mod control_flow_graph;
+pub mod control_flow_graph;
 mod mem2reg;
 mod optimizations {
     pub mod base;

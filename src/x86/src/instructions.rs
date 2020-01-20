@@ -8,6 +8,7 @@ pub static DEFAULT_WORD_SIZE: i32 = 8;
 pub static DEFAULT_TYPE: Type = Type::Quad;
 
 pub static DEFAULT_ARGS_OFFSET: i32 = 16;
+pub static CALLEE_SAVED_OFFSET: i32 = 6 * DEFAULT_WORD_SIZE;
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum Type {
@@ -55,6 +56,14 @@ impl TypedRegister {
 
     pub fn default(reg: Register) -> Self {
         TypedRegister::new(DEFAULT_TYPE.clone(), reg)
+    }
+
+    pub fn is_caller_saved(&self) -> bool {
+        self.reg.is_caller_saved()
+    }
+
+    pub fn is_callee_saved(&self) -> bool {
+        self.reg.is_callee_saved()
     }
 }
 
@@ -161,6 +170,61 @@ pub enum Register {
     R15,
 }
 
+pub fn all_registers() -> Vec<Register> {
+    vec![
+        Register::RAX,
+        Register::RBX,
+        Register::RCX,
+        Register::RDX,
+        Register::RBP,
+        Register::RSP,
+        Register::RSI,
+        Register::RDI,
+        Register::R8,
+        Register::R9,
+        Register::R10,
+        Register::R11,
+        Register::R12,
+        Register::R13,
+        Register::R14,
+        Register::R15
+    ]
+}
+
+impl Register {
+
+    pub fn is_caller_saved(&self) -> bool {
+        use Register::*;
+        match self {
+            RDI |
+            RSI |
+            RDX |
+            RCX |
+            R8 |
+            R9 |
+            R10 |
+            R11 => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn is_callee_saved(&self) -> bool {
+        use Register::*;
+        match self {
+            RBX |
+            RSP |
+            RBP |
+            R12 |
+            R13 |
+            R14 |
+            R15 => true,
+
+            _ => false,
+        }
+    }
+}
+
 impl fmt::Display for Register {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Register::*;
@@ -189,6 +253,18 @@ impl fmt::Display for Register {
 pub enum Storage {
     Register(TypedRegister),
     Memory(Memory),
+}
+
+impl Storage {
+    pub fn with_type(&mut self, ty: &Type) -> Self {
+        match self {
+            Storage::Register(treg) => Storage::Register(TypedRegister {
+                ty: ty.clone(),
+                reg: treg.reg.clone(),
+            }),
+            _ => self.clone(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -359,6 +435,15 @@ pub enum Value {
     Const(i32),
     Storage(Storage),
     Static(Static),
+}
+
+impl Value {
+    pub fn with_type(&mut self, ty: &Type) -> Self {
+        match self {
+            Value::Storage(s) => Value::Storage(s.with_type(ty)),
+            _ => self.clone(),
+        }
+    }
 }
 
 impl From<Static> for Value {

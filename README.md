@@ -1,4 +1,3 @@
-
 # Latte
 
 Kompilator umożliwia generacje kodu LLVM jak i x86 w wersji 64-bitowej.
@@ -49,8 +48,9 @@ Dodatkowo make posiada kilka konfigurowalnych flag:
 - `CODEGEN` - jeśli ustawione na `0` to generowanie kodu jest pomijane (domyślnie: `1`)
 - `MEM2REG` - jeśli ustawione na `0` to generowany kod nie jest w postaci SSA (domyślnie: `1`)
 - `OPTIMIZE` - jeśli ustawione na `0` to kod generowany jest bez optymalizacji (domyślnie: `1`)
+- `REGALLOC` - jeśli ustawione na `0` to kod x86 generowany jest bez alokacji rejestrów (domyślnie: `1`)
 
-**UWAGA:** kompilacja x86 aktualnie nie jest możliwa przy wyłączonym `MEM2REG`
+**UWAGA:** kompilacja x86 aktualnie nie jest możliwa przy wyłączonym `MEM2REG` , a kompilacja z `REGALLOC` nie będzie działała jeśli wyłączymy optymalizacji, gdyż wyłącza to `MEM2REG`.
 
 ## Uruchomienie
 
@@ -78,6 +78,26 @@ Kompilator posiada zaimplementowane następujące optymalizacje:
 - popragacja skoków w blokach prostych złożonych jedynie z instrukcji skoku (zamiast skakać do takiego bloku, kod skacze do bloku, który on wskazuje)
 - eliminacja martwego kodu (unreachable code & unused assignments elimination)
 - eliminacja trywialnych funkcji phi
+- eliminacja wspólnych podwyrażeń
+
+## Rozszerzenia
+
+Kompilator wspiera tablice wielowymiarowe z pętlą _for-each_ w postaci:
+
+    for (int x: t) {
+      ...
+    }
+
+gdzie `x` jest **referencją** na kolejne elementy tablicy `t`. Dzięki temu, możliwa jest zmiana wartości tablicy w pęli, bez używania indeksowania, co myślę że jest bardzo przydatne.
+Dla typów prostych (nietablicowych) zmienna `x` jest również **copy-on-write**.
+
+## Alokacja rejestrów
+
+Kompilator posiada zaimplementowaną alokacje rejestrów dla binarki x86-64. Wykorzystuje tu wszystkie rejestry poza `RAX`, `RBP`, `RSP`, `RCX`, `RDX`. Pierwsze 3 rejestry są pomijane z oczywistych względów. `RCX` oraz `RDX` nie alokuje, gdyż wykorzystywane są przy dzieleniu oraz czasem do offloadowania wartości przy operacjach tablicowych.
+
+Alokacja `RCX`, `RDX` prawdopodobnie byłaby możliwa przy przemyślanym odkładaniu ich wartości na stos (biorąc poprawkę na rejestr w którym powinien znaleźć się końcowy wynik).
+
+Mimo to alokacja działa dobrze. We wszystkich publicznych testach alokacja nie spilluje żadnych zmiennych tj. całość wykonania programów odbywa się tylko na rejestrach.
 
 ## Struktura projektu
 Całość kodu źródłowego kompilatora znajduje się w folderze `src` i składa się z następujących pakietów:
@@ -108,15 +128,10 @@ Całość kodu źródłowego kompilatora znajduje się w folderze `src` i skład
 	- `compiler.rs` - translacja z LLVM do x86
 	- `instructions.rs` - defincja kodu pośredniego, typów itp.
 	- `operators.rs` - definicja operatorów
+        - `register_allocation` - kod alokacji rejestrów
+                - `liveness.rs` - analiza żywotności zmiennych
+                - `interference_graph.rs` - obliczanie grafu interferencji zmiennych
+                - `colouring.rs` - kolorowanie grafu interferencji
 
 W projekcie znajdują się pliki `lib.rs` oraz `main.rs`, które w Ruscie odpowiedzialne są kolejno za implementacje interfejsu danego pakietu oraz samej binarki.
 Ponadto w folderze `lib` można znaleźć plik `runtime.c`, zawierający implementacje funkcji bibliotecznych.
-
-## Potencjalne rzeczy do poprawy/uzupełnienia
-- poprawna optymalizacja stałych dla typu `string`
-- możliwość kompilacji do `x86` bez wykorzystania `mem2reg` (aktualnie x86 ignoruje instrukcje `alloc`, `store` oraz `load`, ktora są usuwane w ramach `mem2reg`)
-- peephole optimization
-- alokacja rejestrów (aktualnie x86 operuje jedynie na zmiennych zaalokowanych na stosie + rejestrach wymaganych do poprawnej realizacji niektórych operacji tj. przekazywanie prametrów funkcji, dzielenie itp.)
-- rozszerzenie języka o tablice/struktury
-- rozszerzenie języka o odśmiecanie
-
